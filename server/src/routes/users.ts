@@ -1,47 +1,46 @@
-import bcrypt from 'bcryptjs';
-import { Router, type Request } from 'express';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { db } from '../db.js';
+import { all, one, run } from '../db.js';
 import { audit } from '../lib/audit.js';
-import { requireRole, type Role } from '../lib/auth.js';
+import { requireRole, type AppEnv, type Role } from '../lib/auth.js';
 import { isProtectedDemoAccount } from '../lib/demo.js';
 import { HttpError, parseId } from '../lib/http.js';
-import { BCRYPT_ROUNDS, publicUser, tempPassword, type UserRow } from '../lib/users.js';
+import { hashPassword } from '../lib/password.js';
+import { publicUser, tempPassword, type UserRow } from '../lib/users.js';
 import { APPOINTMENT_SELECT } from './appointments.js';
 import { PAYMENT_SELECT } from './payments.js';
 
 /** Account management for staff and admins. Staff manage client accounts; admins manage everyone. */
-export const usersRouter = Router();
+export const usersRouter = new Hono<AppEnv>();
 usersRouter.use(requireRole('admin', 'staff'));
 
 const roleSchema = z.enum(['admin', 'staff', 'client']);
+const DEMO_LOCKED = 'This is a shared demo account, so its sign-in details, role and status are protected. Try this on another account.';
 
-function loadUser(id: number) {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+async function loadUser(id: number) {
+  const user = await one<UserRow>('SELECT * FROM users WHERE id = ?', id);
   if (!user) throw new HttpError(404, 'Account not found');
   return user;
 }
 
-const DEMO_LOCKED = 'This is a shared demo account, so its sign-in details, role and status are protected. Try this on another account.';
-
-function assertCanManage(req: Request, target: UserRow) {
-  if (req.user!.role === 'admin') return;
+function assertCanManage(c: Context<AppEnv>, target: UserRow) {
+  if (c.get('user').role === 'admin') return;
   if (target.role !== 'client') throw new HttpError(403, 'Only administrators can manage staff accounts');
 }
 
-usersRouter.get('/', (req, res) => {
+usersRouter.get('/', async (c) => {
   const q = z
     .object({
       role: roleSchema.optional(),
       status: z.enum(['active', 'inactive', 'locked']).optional(),
       q: z.string().trim().optional(),
     })
-    .parse(req.query);
+    .parse(c.req.query());
 
-  const roles: Role[] = req.user!.role === 'admin' ? (q.role ? [q.role] : ['admin', 'staff', 'client']) : ['client'];
+  const roles: Role[] = c.get('user').role === 'admin' ? (q.role ? [q.role] : ['admin', 'staff', 'client']) : ['client'];
   const now = new Date().toISOString();
   const where = [`u.role IN (${roles.map(() => '?').join(',')})`];
-  const params: unknown[] = [...roles];
+  const params: (string | number)[] = [...roles];
 
   if (q.q) {
     where.push('(u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)');
@@ -55,21 +54,21 @@ usersRouter.get('/', (req, res) => {
     params.push(now);
   }
 
-  const rows = db
-    .prepare(
-      `SELECT u.*,
-         (SELECT COUNT(*) FROM appointments a WHERE a.client_id = u.id) AS appointment_count,
-         (SELECT MIN(a.start_at) FROM appointments a
-            WHERE a.client_id = u.id AND a.status = 'scheduled' AND a.start_at >= ?) AS next_appointment,
-         (SELECT COALESCE(SUM(p.amount_cents), 0) FROM payments p
-            WHERE p.client_id = u.id AND p.status = 'paid') AS total_paid_cents
-       FROM users u
-       WHERE ${where.join(' AND ')}
-       ORDER BY u.name COLLATE NOCASE`,
-    )
-    .all(now, ...params) as (UserRow & { appointment_count: number; next_appointment: string | null; total_paid_cents: number })[];
+  const rows = await all<UserRow & { appointment_count: number; next_appointment: string | null; total_paid_cents: number }>(
+    `SELECT u.*,
+       (SELECT COUNT(*) FROM appointments a WHERE a.client_id = u.id) AS appointment_count,
+       (SELECT MIN(a.start_at) FROM appointments a
+          WHERE a.client_id = u.id AND a.status = 'scheduled' AND a.start_at >= ?) AS next_appointment,
+       (SELECT COALESCE(SUM(p.amount_cents), 0) FROM payments p
+          WHERE p.client_id = u.id AND p.status = 'paid') AS total_paid_cents
+     FROM users u
+     WHERE ${where.join(' AND ')}
+     ORDER BY u.name COLLATE NOCASE`,
+    now,
+    ...params,
+  );
 
-  res.json(
+  return c.json(
     rows.map((r) => ({
       ...publicUser(r),
       appointmentCount: r.appointment_count,
@@ -79,27 +78,25 @@ usersRouter.get('/', (req, res) => {
   );
 });
 
-usersRouter.get('/:id', (req, res) => {
-  const user = loadUser(parseId(req.params.id));
-  assertCanManage(req, user);
+usersRouter.get('/:id', async (c) => {
+  const user = await loadUser(parseId(c.req.param('id')));
+  assertCanManage(c, user);
 
-  const appointments = db
-    .prepare(`${APPOINTMENT_SELECT} WHERE a.client_id = ? ORDER BY a.start_at DESC`)
-    .all(user.id);
-  const payments = db.prepare(`${PAYMENT_SELECT} WHERE p.client_id = ? ORDER BY p.paid_at DESC`).all(user.id);
-  const activity = db
-    .prepare(
+  const [appointments, payments, activity] = await Promise.all([
+    all(`${APPOINTMENT_SELECT} WHERE a.client_id = ? ORDER BY a.start_at DESC`, user.id),
+    all(`${PAYMENT_SELECT} WHERE p.client_id = ? ORDER BY p.paid_at DESC`, user.id),
+    all(
       `SELECT l.id, l.action, l.details, l.ip, l.created_at AS createdAt, a.name AS actorName
        FROM audit_log l LEFT JOIN users a ON a.id = l.actor_id
        WHERE l.entity = 'user' AND l.entity_id = ?
        ORDER BY l.id DESC LIMIT 25`,
-    )
-    .all(user.id);
-
-  res.json({ user: publicUser(user), appointments, payments, activity });
+      user.id,
+    ),
+  ]);
+  return c.json({ user: publicUser(user), appointments, payments, activity });
 });
 
-usersRouter.post('/', (req, res) => {
+usersRouter.post('/', async (c) => {
   const body = z
     .object({
       name: z.string().trim().min(1).max(100),
@@ -108,26 +105,28 @@ usersRouter.post('/', (req, res) => {
       notes: z.string().max(2000).optional(),
       role: roleSchema.default('client'),
     })
-    .parse(req.body);
-  if (body.role !== 'client' && req.user!.role !== 'admin') {
+    .parse(await c.req.json());
+  if (body.role !== 'client' && c.get('user').role !== 'admin') {
     throw new HttpError(403, 'Only administrators can create staff accounts');
   }
 
   const password = tempPassword();
-  const info = db
-    .prepare(
-      `INSERT INTO users (email, password_hash, name, phone, notes, role, must_change_password)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-    )
-    .run(body.email, bcrypt.hashSync(password, BCRYPT_ROUNDS), body.name, body.phone || null, body.notes || null, body.role);
-  const id = Number(info.lastInsertRowid);
-  audit(req, 'create_account', 'user', id, { role: body.role });
-  res.status(201).json({ user: publicUser(loadUser(id)), temporaryPassword: password });
+  const { id } = await run(
+    `INSERT INTO users (email, password_hash, name, phone, notes, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    body.email,
+    await hashPassword(password),
+    body.name,
+    body.phone || null,
+    body.notes || null,
+    body.role,
+  );
+  await audit(c, 'create_account', 'user', id, { role: body.role });
+  return c.json({ user: publicUser(await loadUser(id)), temporaryPassword: password }, 201);
 });
 
-usersRouter.patch('/:id', (req, res) => {
-  const user = loadUser(parseId(req.params.id));
-  assertCanManage(req, user);
+usersRouter.patch('/:id', async (c) => {
+  const user = await loadUser(parseId(c.req.param('id')));
+  assertCanManage(c, user);
   const body = z
     .object({
       name: z.string().trim().min(1).max(100).optional(),
@@ -137,9 +136,9 @@ usersRouter.patch('/:id', (req, res) => {
       role: roleSchema.optional(),
       isActive: z.boolean().optional(),
     })
-    .parse(req.body);
+    .parse(await c.req.json());
 
-  const isAdmin = req.user!.role === 'admin';
+  const me = c.get('user');
   if (
     isProtectedDemoAccount(user.email) &&
     ((body.email !== undefined && body.email !== user.email.toLowerCase()) ||
@@ -148,48 +147,47 @@ usersRouter.patch('/:id', (req, res) => {
   ) {
     throw new HttpError(403, DEMO_LOCKED);
   }
-  if ((body.role !== undefined || body.isActive !== undefined) && !isAdmin) {
+  if ((body.role !== undefined || body.isActive !== undefined) && me.role !== 'admin') {
     throw new HttpError(403, 'Only administrators can change roles or account status');
   }
-  if (user.id === req.user!.id && (body.isActive === false || (body.role && body.role !== user.role))) {
+  if (user.id === me.id && (body.isActive === false || (body.role && body.role !== user.role))) {
     throw new HttpError(400, 'You cannot deactivate or change the role of your own account');
   }
 
-  const next = {
-    name: body.name ?? user.name,
-    email: body.email ?? user.email,
-    phone: body.phone !== undefined ? body.phone || null : user.phone,
-    notes: body.notes !== undefined ? body.notes || null : user.notes,
-    role: body.role ?? user.role,
-    is_active: body.isActive === undefined ? user.is_active : Number(body.isActive),
-  };
-  db.prepare(
-    'UPDATE users SET name = @name, email = @email, phone = @phone, notes = @notes, role = @role, is_active = @is_active WHERE id = @id',
-  ).run({ ...next, id: user.id });
+  await run(
+    'UPDATE users SET name = ?, email = ?, phone = ?, notes = ?, role = ?, is_active = ? WHERE id = ?',
+    body.name ?? user.name,
+    body.email ?? user.email,
+    body.phone !== undefined ? body.phone || null : user.phone,
+    body.notes !== undefined ? body.notes || null : user.notes,
+    body.role ?? user.role,
+    body.isActive === undefined ? user.is_active : Number(body.isActive),
+    user.id,
+  );
 
-  const changed = Object.keys(body);
-  const action =
-    body.isActive === false ? 'deactivate_account' : body.isActive === true ? 'activate_account' : 'update_account';
-  audit(req, action, 'user', user.id, { fields: changed });
-  res.json(publicUser(loadUser(user.id)));
+  const action = body.isActive === false ? 'deactivate_account' : body.isActive === true ? 'activate_account' : 'update_account';
+  await audit(c, action, 'user', user.id, { fields: Object.keys(body) });
+  return c.json(publicUser(await loadUser(user.id)));
 });
 
-usersRouter.post('/:id/reset-password', (req, res) => {
-  const user = loadUser(parseId(req.params.id));
-  assertCanManage(req, user);
+usersRouter.post('/:id/reset-password', async (c) => {
+  const user = await loadUser(parseId(c.req.param('id')));
+  assertCanManage(c, user);
   if (isProtectedDemoAccount(user.email)) throw new HttpError(403, DEMO_LOCKED);
   const password = tempPassword();
-  db.prepare(
+  await run(
     'UPDATE users SET password_hash = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL WHERE id = ?',
-  ).run(bcrypt.hashSync(password, BCRYPT_ROUNDS), user.id);
-  audit(req, 'reset_password', 'user', user.id);
-  res.json({ temporaryPassword: password });
+    await hashPassword(password),
+    user.id,
+  );
+  await audit(c, 'reset_password', 'user', user.id);
+  return c.json({ temporaryPassword: password });
 });
 
-usersRouter.post('/:id/unlock', (req, res) => {
-  const user = loadUser(parseId(req.params.id));
-  assertCanManage(req, user);
-  db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id);
-  audit(req, 'unlock_account', 'user', user.id);
-  res.json(publicUser(loadUser(user.id)));
+usersRouter.post('/:id/unlock', async (c) => {
+  const user = await loadUser(parseId(c.req.param('id')));
+  assertCanManage(c, user);
+  await run('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', user.id);
+  await audit(c, 'unlock_account', 'user', user.id);
+  return c.json(publicUser(await loadUser(user.id)));
 });

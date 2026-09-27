@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { isProtectedDemoAccount } from './demo.js';
 
 export interface UserRow {
@@ -39,9 +38,7 @@ export function publicUser(u: UserRow) {
 /** Readable temporary password, e.g. "Kq7m-Xp2d-Rw9t". */
 export function tempPassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = crypto.randomBytes(12);
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
   const chars = Array.from(bytes, (b) => alphabet[b % alphabet.length]);
   return [0, 4, 8].map((i) => chars.slice(i, i + 4).join('')).join('-');
 }
-
-export const BCRYPT_ROUNDS = 11;

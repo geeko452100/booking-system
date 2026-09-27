@@ -1,73 +1,62 @@
-import bcrypt from 'bcryptjs';
-import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import { config } from '../config.js';
-import { db } from '../db.js';
+import { one, run } from '../db.js';
 import { audit } from '../lib/audit.js';
+import { authRateLimit, clearSession, requireAuth, setSession, type AppEnv } from '../lib/auth.js';
 import { isProtectedDemoAccount } from '../lib/demo.js';
-import { clearSessionCookie, requireAuth, setSessionCookie } from '../lib/auth.js';
 import { HttpError } from '../lib/http.js';
-import { BCRYPT_ROUNDS, publicUser, type UserRow } from '../lib/users.js';
+import { DUMMY_HASH, hashPassword, verifyPassword } from '../lib/password.js';
+import { publicUser, type UserRow } from '../lib/users.js';
 
-export const authRouter = Router();
+const MAX_FAILED_LOGINS = 5;
+const LOCK_MINUTES = 15;
 
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
-
-// Compared against when the email is unknown, so response time doesn't reveal which emails exist.
-const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_ROUNDS);
+export const authRouter = new Hono<AppEnv>();
 
 const password = z.string().min(8, 'must be at least 8 characters').max(128);
+const loadUser = (id: number) => one<UserRow>('SELECT * FROM users WHERE id = ?', id) as Promise<UserRow>;
 
-authRouter.post('/login', loginLimiter, (req, res) => {
+authRouter.post('/login', authRateLimit, async (c) => {
   const { email, password: pw } = z
     .object({ email: z.string().trim().email(), password: z.string().min(1) })
-    .parse(req.body);
+    .parse(await c.req.json());
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+  const user = await one<UserRow>('SELECT * FROM users WHERE email = ?', email);
   const now = new Date();
 
   if (!user) {
-    bcrypt.compareSync(pw, DUMMY_HASH);
+    await verifyPassword(pw, DUMMY_HASH);
     throw new HttpError(401, 'Incorrect email or password');
   }
   if (user.locked_until && user.locked_until > now.toISOString()) {
-    audit(req, 'login_blocked_locked', 'user', user.id, undefined, user.id);
+    await audit(c, 'login_blocked_locked', 'user', user.id, undefined, user.id);
     throw new HttpError(423, 'This account is temporarily locked after too many failed attempts. Try again later or contact staff.');
   }
   if (!user.is_active) {
-    audit(req, 'login_blocked_inactive', 'user', user.id, undefined, user.id);
+    await audit(c, 'login_blocked_inactive', 'user', user.id, undefined, user.id);
     throw new HttpError(403, 'This account has been deactivated. Please contact staff.');
   }
 
-  if (!bcrypt.compareSync(pw, user.password_hash)) {
+  if (!(await verifyPassword(pw, user.password_hash))) {
     // Shared demo logins never lock, or one visitor's typos would lock out everyone else.
     if (isProtectedDemoAccount(user.email)) {
-      audit(req, 'login_failed', 'user', user.id, undefined, user.id);
+      await audit(c, 'login_failed', 'user', user.id, undefined, user.id);
       throw new HttpError(401, 'Incorrect email or password');
     }
     const failed = user.failed_logins + 1;
-    const lockedUntil =
-      failed >= config.maxFailedLogins ? new Date(now.getTime() + config.lockMinutes * 60_000).toISOString() : null;
-    db.prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?').run(
-      lockedUntil ? 0 : failed,
-      lockedUntil,
-      user.id,
-    );
-    audit(req, lockedUntil ? 'account_locked' : 'login_failed', 'user', user.id, { attempt: failed }, user.id);
+    const lockedUntil = failed >= MAX_FAILED_LOGINS ? new Date(now.getTime() + LOCK_MINUTES * 60_000).toISOString() : null;
+    await run('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?', lockedUntil ? 0 : failed, lockedUntil, user.id);
+    await audit(c, lockedUntil ? 'account_locked' : 'login_failed', 'user', user.id, { attempt: failed }, user.id);
     throw new HttpError(401, 'Incorrect email or password');
   }
 
-  db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ? WHERE id = ?').run(
-    now.toISOString(),
-    user.id,
-  );
-  audit(req, 'login', 'user', user.id, undefined, user.id);
-  setSessionCookie(res, user.id);
-  res.json(publicUser({ ...user, failed_logins: 0, locked_until: null, last_login_at: now.toISOString() }));
+  await run('UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ? WHERE id = ?', now.toISOString(), user.id);
+  await audit(c, 'login', 'user', user.id, undefined, user.id);
+  await setSession(c, user.id);
+  return c.json(publicUser({ ...user, failed_logins: 0, locked_until: null, last_login_at: now.toISOString() }));
 });
 
-authRouter.post('/register', loginLimiter, (req, res) => {
+authRouter.post('/register', authRateLimit, async (c) => {
   const body = z
     .object({
       name: z.string().trim().min(1).max(100),
@@ -75,55 +64,51 @@ authRouter.post('/register', loginLimiter, (req, res) => {
       phone: z.string().trim().max(30).optional(),
       password,
     })
-    .parse(req.body);
+    .parse(await c.req.json());
 
-  const exists = db.prepare('SELECT 1 FROM users WHERE email = ?').get(body.email);
-  if (exists) throw new HttpError(409, 'An account with this email already exists');
-
-  const now = new Date().toISOString();
-  const info = db
-    .prepare(
-      `INSERT INTO users (email, password_hash, name, phone, role, last_login_at)
-       VALUES (?, ?, ?, ?, 'client', ?)`,
-    )
-    .run(body.email, bcrypt.hashSync(body.password, BCRYPT_ROUNDS), body.name, body.phone || null, now);
-  const id = Number(info.lastInsertRowid);
-  audit(req, 'register', 'user', id, undefined, id);
-  setSessionCookie(res, id);
-  res.status(201).json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow));
+  if (await one('SELECT 1 FROM users WHERE email = ?', body.email)) {
+    throw new HttpError(409, 'An account with this email already exists');
+  }
+  const { id } = await run(
+    `INSERT INTO users (email, password_hash, name, phone, role, last_login_at) VALUES (?, ?, ?, ?, 'client', ?)`,
+    body.email,
+    await hashPassword(body.password),
+    body.name,
+    body.phone || null,
+    new Date().toISOString(),
+  );
+  await audit(c, 'register', 'user', id, undefined, id);
+  await setSession(c, id);
+  return c.json(publicUser(await loadUser(id)), 201);
 });
 
-authRouter.post('/logout', (req, res) => {
-  clearSessionCookie(res);
-  res.status(204).end();
+authRouter.post('/logout', (c) => {
+  clearSession(c);
+  return c.body(null, 204);
 });
 
-authRouter.get('/me', requireAuth, (req, res) => {
-  res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.id) as UserRow));
-});
+authRouter.get('/me', requireAuth, async (c) => c.json(publicUser(await loadUser(c.get('user').id))));
 
-authRouter.patch('/me', requireAuth, (req, res) => {
+authRouter.patch('/me', requireAuth, async (c) => {
   const body = z
     .object({ name: z.string().trim().min(1).max(100), phone: z.string().trim().max(30).nullable().optional() })
-    .parse(req.body);
-  db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(body.name, body.phone || null, req.user!.id);
-  audit(req, 'update_profile', 'user', req.user!.id);
-  res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.id) as UserRow));
+    .parse(await c.req.json());
+  const id = c.get('user').id;
+  await run('UPDATE users SET name = ?, phone = ? WHERE id = ?', body.name, body.phone || null, id);
+  await audit(c, 'update_profile', 'user', id);
+  return c.json(publicUser(await loadUser(id)));
 });
 
-authRouter.post('/me/password', requireAuth, (req, res) => {
-  const body = z.object({ currentPassword: z.string().min(1), newPassword: password }).parse(req.body);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.id) as UserRow;
+authRouter.post('/me/password', requireAuth, async (c) => {
+  const body = z.object({ currentPassword: z.string().min(1), newPassword: password }).parse(await c.req.json());
+  const user = await loadUser(c.get('user').id);
   if (isProtectedDemoAccount(user.email)) {
     throw new HttpError(403, "This is a shared demo account, so its password can't be changed. Create your own account to try this.");
   }
-  if (!bcrypt.compareSync(body.currentPassword, user.password_hash)) {
+  if (!(await verifyPassword(body.currentPassword, user.password_hash))) {
     throw new HttpError(400, 'Current password is incorrect');
   }
-  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(
-    bcrypt.hashSync(body.newPassword, BCRYPT_ROUNDS),
-    user.id,
-  );
-  audit(req, 'change_password', 'user', user.id);
-  res.status(204).end();
+  await run('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', await hashPassword(body.newPassword), user.id);
+  await audit(c, 'change_password', 'user', user.id);
+  return c.body(null, 204);
 });

@@ -1,0 +1,2 @@
+# Local development secrets for `wrangler dev`. Copied to .dev.vars on first `npm run dev`.
+JWT_SECRET=local-dev-secret-change-me

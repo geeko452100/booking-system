@@ -1,22 +1,21 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import { db } from '../db.js';
+import { all, one, run } from '../db.js';
 import { audit } from '../lib/audit.js';
-import { isStaff, requireRole } from '../lib/auth.js';
+import { isStaff, requireRole, type AppEnv } from '../lib/auth.js';
 import { HttpError, parseId } from '../lib/http.js';
 
-export const servicesRouter = Router();
+export const servicesRouter = new Hono<AppEnv>();
 
 const SELECT = `SELECT id, name, description, duration_min AS durationMin, price_cents AS priceCents,
   is_active AS isActive FROM services`;
 
-const toService = (r: Record<string, unknown>) => ({ ...r, isActive: !!r.isActive });
+type ServiceRow = Record<string, unknown> & { isActive: number };
+const toService = (r: ServiceRow | null) => r && { ...r, isActive: !!r.isActive };
 
-servicesRouter.get('/', (req, res) => {
-  const rows = db
-    .prepare(`${SELECT} ${isStaff(req) ? '' : 'WHERE is_active = 1'} ORDER BY name`)
-    .all() as Record<string, unknown>[];
-  res.json(rows.map(toService));
+servicesRouter.get('/', async (c) => {
+  const rows = await all<ServiceRow>(`${SELECT} ${isStaff(c) ? '' : 'WHERE is_active = 1'} ORDER BY name`);
+  return c.json(rows.map(toService));
 });
 
 const serviceSchema = z.object({
@@ -27,23 +26,24 @@ const serviceSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-servicesRouter.post('/', requireRole('admin'), (req, res) => {
-  const b = serviceSchema.parse(req.body);
-  const info = db
-    .prepare('INSERT INTO services (name, description, duration_min, price_cents, is_active) VALUES (?, ?, ?, ?, ?)')
-    .run(b.name, b.description || null, b.durationMin, b.priceCents, Number(b.isActive));
-  const id = Number(info.lastInsertRowid);
-  audit(req, 'create_service', 'service', id, { name: b.name });
-  res.status(201).json(toService(db.prepare(`${SELECT} WHERE id = ?`).get(id) as Record<string, unknown>));
+servicesRouter.post('/', requireRole('admin'), async (c) => {
+  const b = serviceSchema.parse(await c.req.json());
+  const { id } = await run(
+    'INSERT INTO services (name, description, duration_min, price_cents, is_active) VALUES (?, ?, ?, ?, ?)',
+    b.name, b.description || null, b.durationMin, b.priceCents, b.isActive,
+  );
+  await audit(c, 'create_service', 'service', id, { name: b.name });
+  return c.json(toService(await one<ServiceRow>(`${SELECT} WHERE id = ?`, id)), 201);
 });
 
-servicesRouter.put('/:id', requireRole('admin'), (req, res) => {
-  const id = parseId(req.params.id);
-  const b = serviceSchema.parse(req.body);
-  const info = db
-    .prepare('UPDATE services SET name = ?, description = ?, duration_min = ?, price_cents = ?, is_active = ? WHERE id = ?')
-    .run(b.name, b.description || null, b.durationMin, b.priceCents, Number(b.isActive), id);
-  if (!info.changes) throw new HttpError(404, 'Service not found');
-  audit(req, 'update_service', 'service', id, { name: b.name });
-  res.json(toService(db.prepare(`${SELECT} WHERE id = ?`).get(id) as Record<string, unknown>));
+servicesRouter.put('/:id', requireRole('admin'), async (c) => {
+  const id = parseId(c.req.param('id'));
+  const b = serviceSchema.parse(await c.req.json());
+  const { changes } = await run(
+    'UPDATE services SET name = ?, description = ?, duration_min = ?, price_cents = ?, is_active = ? WHERE id = ?',
+    b.name, b.description || null, b.durationMin, b.priceCents, b.isActive, id,
+  );
+  if (!changes) throw new HttpError(404, 'Service not found');
+  await audit(c, 'update_service', 'service', id, { name: b.name });
+  return c.json(toService(await one<ServiceRow>(`${SELECT} WHERE id = ?`, id)));
 });

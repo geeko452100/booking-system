@@ -1,7 +1,7 @@
 # Booking System
 
 A full-stack appointment booking app with a staff dashboard, client self-service portal, account management and
-payment records. Built with **React**, **TypeScript** and **Node.js**.
+payment records. Built with **React** and **TypeScript**, and runs on **Cloudflare Workers** with a **D1** database.
 
 Clients book, cancel and pay for their own appointments. Staff and administrators run the day from one dashboard:
 today's schedule, client accounts and sign-in security, payments, and a full activity log.
@@ -30,7 +30,7 @@ today's schedule, client accounts and sign-in security, payments, and a full act
 
 ## Quick start
 
-Requires **Node.js 22** (developed on 22.11) and npm.
+Requires **Node.js 22** and npm. You don't need a Cloudflare account to run it locally.
 
 ```bash
 git clone <this-repo-url> booking-system
@@ -39,7 +39,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173**. The first start creates a SQLite database with demo data. Sign in with:
+Open **http://localhost:5173**. The first request loads demo data into a local D1 database. Sign in with:
 
 | Role   | Email                | Password     |
 | ------ | -------------------- | ------------ |
@@ -47,28 +47,47 @@ Open **http://localhost:5173**. The first start creates a SQLite database with d
 | Staff  | `sam@example.com`    | `Staff123!`  |
 | Client | `client@example.com` | `Client123!` |
 
-To wipe the database and reload fresh demo data at any time, run `npm run seed`.
+To wipe the local database and reload fresh demo data at any time, run `npm run seed`.
 
-## Running a public demo
+## Deploying to Cloudflare
+
+The app deploys as one Cloudflare Worker: the React build is served as static assets, `/api/*` runs the Worker,
+data lives in D1, and a Cron Trigger resets the demo data every hour. HTTPS is included.
+
+One-time setup, run from the `server/` folder:
 
 ```bash
-npm install
-npm run demo
+cd server
+npx wrangler login
+npx wrangler d1 create booking
 ```
 
-This builds the app and serves it at **http://localhost:4000** in demo mode, which is designed for sharing a link:
+Copy the `database_id` it prints into `server/wrangler.jsonc`, replacing `00000000-0000-0000-0000-000000000000`. Then:
 
-- **Data resets itself** at start-up and every 60 minutes (`DEMO_RESET_MINUTES`), so dates stay current and visitors'
-  changes are cleared. A bar on every page says when the next reset is.
+```bash
+npx wrangler d1 migrations apply DB --remote   # create the tables
+npx wrangler secret put JWT_SECRET             # paste a long random value, e.g. from `openssl rand -hex 32`
+cd ..
+npm run deploy
+```
+
+Wrangler prints the site's address (`https://booking-system.<your-subdomain>.workers.dev`). The first visit loads
+the demo data. To deploy changes later, just run `npm run deploy` again.
+
+> **Plan note.** The Workers Free plan allows 10 ms of CPU per request. Checking a password (PBKDF2 with 100,000
+> iterations) takes longer than that. Cloudflare allows occasional overruns, so a lightly used demo may be fine on the
+> free plan, but if sign-ins fail with an "exceeded CPU" error, switch to Workers Paid ($5/month), which allows 30 seconds.
+
+### Demo mode
+
+Demo mode is on by default (`DEMO_MODE` in `server/wrangler.jsonc`) and is designed for sharing a public link:
+
+- **Data resets itself** every hour, so dates stay current and visitors' changes are cleared. A bar on every page says
+  when the next reset is.
 - **The demo logins can't be broken.** They never lock after wrong passwords, and their password, email, role and
   status can't be changed, so one visitor can't lock out the next.
 - **Everyone is signed out at each reset**, with a message explaining why.
 - **One-click sign-in:** the sign-in page has Admin / Staff / Client buttons.
-- No secrets to configure.
-
-To put it on the internet, serve it over **HTTPS**, for example behind a reverse proxy or a
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/). In production,
-sign-in cookies are HTTPS-only, so sign-in won't work over plain `http://` on a public address.
 
 ## Test payments
 
@@ -103,72 +122,76 @@ Permissions are enforced by the API; the interface only hides what a role can't 
 
 ## Security
 
-- Passwords are hashed with bcrypt. Sessions are signed JWTs in `httpOnly`, `SameSite=Strict` cookies that last 8 hours.
+- Passwords are hashed with PBKDF2-SHA256 (100,000 iterations, the most Workers allows). Sessions are signed JWTs in
+  `httpOnly`, `SameSite=Strict`, `Secure` cookies that last 8 hours.
 - The signed-in user is re-checked on every request, so deactivating an account or changing its role takes effect immediately.
-- Five failed sign-ins lock an account for 15 minutes. Sign-in and sign-up are also rate-limited per IP address.
+- Five failed sign-ins lock an account for 15 minutes. Sign-in and sign-up are also limited to 20 attempts per minute
+  per IP address, using Cloudflare's rate limiting binding.
 - Accounts created by staff, and password resets, get a one-time temporary password that must be changed after signing in.
-- Every request body and query is validated with zod. Security headers come from Helmet.
+- Double-booking and double-payment checks run inside the same database write, so simultaneous requests can't both succeed.
+- Every request body and query is validated with zod. The API and the static site both send security headers,
+  including a Content Security Policy.
 
 ## Tech stack
 
-| Layer    | Tools                                                                   |
-| -------- | ----------------------------------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite, React Router. Plain CSS, no UI library      |
-| Backend  | Node.js, Express 5, TypeScript, zod, bcryptjs, jsonwebtoken, Helmet     |
-| Database | SQLite via better-sqlite3 (a single file, no database server needed)    |
+| Layer    | Tools                                                                        |
+| -------- | ---------------------------------------------------------------------------- |
+| Frontend | React 19, TypeScript, Vite, React Router. Plain CSS, no UI library           |
+| Backend  | Cloudflare Workers, Hono, TypeScript, zod, Web Crypto                        |
+| Data     | Cloudflare D1 (SQLite), with a Cron Trigger for demo resets                  |
+| Tooling  | Wrangler for local development (simulates Workers and D1) and deployment     |
 
 ## Project structure
 
 ```
 booking-system/
-├── package.json          npm workspaces and top-level scripts
-├── client/               React app (Vite dev server on :5173, proxies /api to :4000)
+├── package.json            npm workspaces and top-level scripts
+├── client/                 React app (Vite dev server on :5173, proxies /api to :4000)
+│   ├── public/_headers     security headers for the static site
 │   └── src/
-│       ├── pages/        one component per screen
-│       ├── components/   layout, forms, checkout, shared UI
-│       ├── api.ts        fetch wrapper and useApi hook
-│       └── auth.tsx      sign-in state
-└── server/               Express API on :4000
+│       ├── pages/          one component per screen
+│       ├── components/     layout, forms, checkout, shared UI
+│       ├── api.ts          fetch wrapper and useApi hook
+│       └── auth.tsx        sign-in state
+└── server/                 Cloudflare Worker (wrangler dev on :4000)
+    ├── wrangler.jsonc      Worker, D1, rate limit, cron and demo settings
+    ├── migrations/         D1 schema
+    ├── scripts/            local dev helpers, seed SQL generator
     └── src/
-        ├── routes/       auth, users, appointments, payments, services, dashboard, audit
-        ├── lib/          sessions, audit logging, demo data and resets
-        ├── db.ts         SQLite schema
-        └── seed.ts       `npm run seed`
+        ├── index.ts        routes, fetch and scheduled handlers
+        ├── routes/         auth, users, appointments, payments, services, dashboard, audit
+        ├── lib/            sessions, passwords, audit logging, demo mode
+        ├── db.ts           D1 query helpers
+        └── seed-data.ts    demo data
 ```
 
 ## Scripts
 
 Run from the project root.
 
-| Command             | What it does                                                           |
-| ------------------- | ---------------------------------------------------------------------- |
-| `npm run dev`       | Starts the API and the web app with hot reload                         |
-| `npm run seed`      | Wipes the database and loads fresh demo data                           |
-| `npm run build`     | Builds the server and the client for production                        |
-| `npm start`         | Serves the production build on port 4000 (needs `JWT_SECRET`)          |
-| `npm run demo`      | Builds, then serves in demo mode on port 4000                          |
-| `npm run typecheck` | Type-checks both packages                                              |
+| Command             | What it does                                                                     |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `npm run dev`       | Starts the Worker (with a local D1 database) and the web app with hot reload     |
+| `npm run seed`      | Wipes the local database and loads fresh demo data                               |
+| `npm run build`     | Builds the React app into `client/dist`                                          |
+| `npm run deploy`    | Builds the React app and deploys everything to Cloudflare                        |
+| `npm run typecheck` | Type-checks both packages                                                        |
+
+In `server/`: `npm run seed:remote` resets the deployed database, and `npm run db:migrate:remote` applies new migrations to it.
 
 ## Configuration
 
-Set these as environment variables for the server.
+Settings live in `server/wrangler.jsonc` under `vars`. Run `npm run deploy` after changing them.
 
-| Variable             | Default           | Description                                                        |
-| -------------------- | ----------------- | ------------------------------------------------------------------ |
-| `PORT`               | `4000`            | Port for the API (and the built app in production)                 |
-| `JWT_SECRET`         | —                 | Secret for signing sessions. Required for `npm start`              |
-| `DB_FILE`            | `data/booking.db` | SQLite file, relative to `server/`                                 |
-| `DEMO_MODE`          | off               | `1` turns on demo mode (set automatically by `npm run demo`)       |
-| `DEMO_RESET_MINUTES` | `60`              | How often demo data resets, in minutes (minimum 5)                 |
+| Variable             | Default            | Description                                                                  |
+| -------------------- | ------------------ | ---------------------------------------------------------------------------- |
+| `DEMO_MODE`          | `"1"`              | `"1"` turns on demo mode. Anything else turns it off                         |
+| `DEMO_RESET_MINUTES` | `"60"`             | How often demo data resets. Change the `crons` schedule in the same file to match |
+| `DEMO_TIMEZONE`      | `America/New_York` | Demo appointments are placed between 9am and 5pm in this timezone            |
+| `JWT_SECRET`         | —                  | Secret for signing sessions. Set with `wrangler secret put`; locally it comes from `server/.dev.vars`, created on first `npm run dev` |
 
-Production without demo mode:
-
-```bash
-npm run build
-JWT_SECRET="$(openssl rand -hex 32)" npm start
-```
-
-Keep the same `JWT_SECRET` across restarts, or everyone is signed out whenever the server restarts.
+A new, empty database is always filled with demo data on its first request, even outside demo mode. That includes
+the demo accounts and their published passwords, so change or deactivate those accounts before using the app for anything real.
 
 ## API
 
@@ -185,8 +208,10 @@ All endpoints are under `/api`, take and return JSON, and use the session cookie
 
 ## Troubleshooting
 
-- **`npm install` fails while building better-sqlite3:** you're probably on an unusual platform or Node version with no
-  prebuilt binary. Use Node.js 22, or install build tools (`build-essential` and `python3` on Debian/Ubuntu).
-- **Sign-in doesn't stick in production:** the site is being served over plain HTTP on a non-localhost address.
-  Put it behind HTTPS.
-- **Port already in use:** set `PORT` for the API. The Vite dev server port is in `client/vite.config.ts`.
+- **`Server is missing JWT_SECRET`:** run `npx wrangler secret put JWT_SECRET` in `server/`, then deploy again.
+- **`no such table` errors after deploying:** the remote database has no tables yet. Run
+  `npx wrangler d1 migrations apply DB --remote` in `server/`.
+- **Sign-in fails with "exceeded CPU" on the free plan:** see the plan note under [Deploying to Cloudflare](#deploying-to-cloudflare).
+- **"Too many attempts":** more than 20 sign-ins came from one IP address in a minute. Wait a minute.
+- **Port already in use:** the Worker's port is in `server/package.json` (`wrangler dev --port 4000`), and the Vite
+  port and proxy are in `client/vite.config.ts`.

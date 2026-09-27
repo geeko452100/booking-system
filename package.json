@@ -8,10 +8,9 @@
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "seed": "npm run seed -w server",
-    "build": "npm run build -w server && npm run build -w client",
-    "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
-    "demo": "npm run build && npm run start:demo -w server"
+    "build": "npm run build -w client",
+    "deploy": "npm run build && npm run deploy -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
