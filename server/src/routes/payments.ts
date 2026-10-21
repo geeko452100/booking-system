@@ -103,7 +103,7 @@ paymentsRouter.post('/', requireRole('admin', 'staff'), async (c) => {
   if (!(await one(`SELECT 1 FROM users WHERE id = ? AND role = 'client'`, b.clientId))) throw new HttpError(400, 'Unknown client');
   if (b.appointmentId) {
     const appt = await one<{ client_id: number }>('SELECT client_id FROM appointments WHERE id = ?', b.appointmentId);
-    if (!appt || appt.client_id !== b.clientId) throw new HttpError(400, 'Appointment does not belong to this client');
+    if (!appt || appt.client_id !== b.clientId) throw new HttpError(400, 'That meeting does not belong to this client');
   }
 
   const { id } = await run(
@@ -166,10 +166,10 @@ paymentsRouter.post('/checkout', requireRole('client'), async (c) => {
     b.appointmentId,
     me.id,
   );
-  if (!appt) throw new HttpError(404, 'Appointment not found');
-  if (appt.status === 'cancelled' || appt.status === 'no_show') throw new HttpError(400, 'This appointment cannot be paid online');
+  if (!appt) throw new HttpError(404, 'Invoice not found');
+  if (appt.status === 'cancelled' || appt.status === 'no_show') throw new HttpError(400, 'This invoice cannot be paid online');
   const amount = appt.priceCents - appt.paidCents;
-  if (amount <= 0) throw new HttpError(400, 'This appointment is already paid');
+  if (amount <= 0) throw new HttpError(400, 'This invoice is already paid');
 
   const approved = outcome === 'approve';
   const reference = `TEST-${cardNumber.slice(-4)}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
@@ -180,7 +180,7 @@ paymentsRouter.post('/checkout', requireRole('client'), async (c) => {
     me.id, b.appointmentId, amount, approved ? 'paid' : 'failed', reference, me.id, new Date().toISOString(),
     b.appointmentId, appt.paidCents,
   );
-  if (!changes) throw new HttpError(409, 'This appointment was just paid');
+  if (!changes) throw new HttpError(409, 'This invoice was just paid');
   await audit(c, approved ? 'online_payment' : 'online_payment_declined', 'payment', id, { amountCents: amount, testMode: true });
 
   if (!approved) throw new HttpError(402, 'Your card was declined (test card 4000 0000 0000 0002). No money was taken.');
