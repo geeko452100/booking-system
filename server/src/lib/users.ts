@@ -1,3 +1,5 @@
+import { one } from '../db.js';
+import type { BusinessType } from './business.js';
 import { isProtectedDemoAccount } from './demo.js';
 
 export interface UserRow {
@@ -13,10 +15,17 @@ export interface UserRow {
   must_change_password: number;
   last_login_at: string | null;
   notes: string | null;
+  /** From staff_profiles for the current business. */
   photo: string | null;
   title: string | null;
   created_at: string;
 }
+
+/** Users with their staff profile (title, headshot) for one business. Takes the business as its first parameter. */
+export const USER_SELECT = `SELECT u.*, sp.title, sp.photo FROM users u
+  LEFT JOIN staff_profiles sp ON sp.user_id = u.id AND sp.biz = ?`;
+
+export const findUser = (biz: BusinessType, id: number) => one<UserRow>(`${USER_SELECT} WHERE u.id = ?`, biz, id);
 
 export function publicUser(u: UserRow) {
   return {
