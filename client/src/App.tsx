@@ -9,7 +9,10 @@ import { Appointments } from './pages/Appointments';
 import { AuditLog } from './pages/AuditLog';
 import { ClientHome } from './pages/ClientHome';
 import { Dashboard } from './pages/Dashboard';
+import { Documents } from './pages/Documents';
 import { Login, Register } from './pages/Login';
+import { Matters } from './pages/Matters';
+import { Messages } from './pages/Messages';
 import { Payments } from './pages/Payments';
 import { Services } from './pages/Services';
 import type { Role } from './types';
@@ -31,13 +34,16 @@ export function App() {
       <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
       <Route element={<Guard><Layout /></Guard>}>
         <Route index element={isStaffRole(user) ? <Dashboard /> : <ClientHome />} />
+        <Route path="matters" element={<Matters />} />
+        <Route path="documents" element={<Documents />} />
+        <Route path="messages" element={<Messages />} />
         <Route path="appointments" element={<Appointments />} />
         <Route path="payments" element={<Payments />} />
         <Route path="account" element={<Account />} />
         <Route path="clients" element={<Guard roles={['admin', 'staff']}><Accounts kind="clients" /></Guard>} />
         <Route path="clients/:id" element={<Guard roles={['admin', 'staff']}><AccountDetail /></Guard>} />
         <Route path="staff" element={<Guard roles={['admin']}><Accounts kind="staff" /></Guard>} />
-        <Route path="services" element={<Guard roles={['admin', 'staff']}><Services /></Guard>} />
+        <Route path="services" element={<Services />} />
         <Route path="audit" element={<Guard roles={['admin']}><AuditLog /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

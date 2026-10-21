@@ -2,20 +2,31 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../auth';
 import { useDemo } from '../demo';
+import { Brand, FIRM } from '../components/Layout';
 import { ErrorBanner, Field } from '../components/ui';
 
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div className="auth-page">
-      <div className="auth-card">
-        <div className="brand brand-lg">
-          <span className="brand-mark">B</span>
-          <span>Bookings</span>
+      <aside className="auth-hero">
+        <img src="/img/library.jpg" alt="" className="auth-hero-img" />
+        <div className="auth-hero-text">
+          <p className="eyebrow">Client portal</p>
+          <h2>Your case, your documents and your legal team, all in one secure place.</h2>
+          <p>
+            Track each matter, send documents securely, message your attorney, book meetings and pay invoices online.
+          </p>
+          <p className="auth-hero-note">{FIRM} is a fictional firm, made up for this demo.</p>
         </div>
-        <h1>{title}</h1>
-        <p className="muted">{subtitle}</p>
-        {children}
-      </div>
+      </aside>
+      <main className="auth-main">
+        <div className="auth-card">
+          <Brand large />
+          <h1>{title}</h1>
+          <p className="muted">{subtitle}</p>
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
@@ -44,7 +55,7 @@ export function Login() {
   };
 
   return (
-    <AuthShell title="Sign in" subtitle="Welcome back. Sign in to manage your bookings.">
+    <AuthShell title="Sign in" subtitle="Welcome back. Sign in to see your matters, documents and messages.">
       <form className="form" onSubmit={submit}>
         {notice && !error && <div className="alert alert-warn">{notice}</div>}
         <ErrorBanner message={error} />
@@ -59,7 +70,7 @@ export function Login() {
         </button>
       </form>
       <p className="auth-foot">
-        New client? <Link to="/register">Create an account</Link>
+        New client? <Link to="/register">Request a portal account</Link>
       </p>
       {demo?.demoMode && demo.accounts && (
         <div className="demo-hint">
@@ -112,7 +123,7 @@ export function Register() {
   };
 
   return (
-    <AuthShell title="Create your account" subtitle="Book and manage your appointments online.">
+    <AuthShell title="Create your portal account" subtitle="Book a consultation and keep in touch with your legal team.">
       <form className="form" onSubmit={submit}>
         <ErrorBanner message={error} />
         <Field label="Full name">

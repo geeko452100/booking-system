@@ -11,7 +11,7 @@ export function AuditLog() {
 
   return (
     <>
-      <PageHeader title="Activity log" subtitle="Sign-ins, account changes, bookings and payments — who did what, and when." />
+      <PageHeader title="Activity log" subtitle="Sign-ins, account changes, matters, documents, messages, meetings and payments: who did what, and when." />
       <div className="toolbar">
         <input type="search" className="search" placeholder="Filter by action or person…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>

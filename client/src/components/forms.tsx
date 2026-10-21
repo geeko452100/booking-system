@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { api, qs, useApi } from '../api';
 import { isStaffRole, useAuth } from '../auth';
 import { formatDateTime, formatMoney, labels, toLocalInput } from '../format';
-import type { Appointment, Payment, PaymentMethod, PaymentStatus, Role, Service, User, UserListItem } from '../types';
+import type { Appointment, Attorney, Payment, PaymentMethod, PaymentStatus, Role, Service, User, UserListItem } from '../types';
 import { ErrorBanner, Field, TempPasswordNotice } from './ui';
 
 function useSubmit<T>(fn: () => Promise<T>, onDone: (r: T) => void) {
@@ -39,22 +39,24 @@ function FormActions({ busy, label, onCancel }: { busy: boolean; label: string; 
 export function AppointmentForm({
   appointment,
   clientId: presetClientId,
+  serviceId: presetServiceId,
   onSaved,
   onCancel,
 }: {
   appointment?: Appointment;
   clientId?: number;
+  serviceId?: number;
   onSaved: (a: Appointment) => void;
   onCancel: () => void;
 }) {
   const { user } = useAuth();
   const staff = isStaffRole(user);
   const { data: services } = useApi<Service[]>('/services');
-  const { data: providers } = useApi<{ id: number; name: string }[]>('/appointments/providers');
+  const { data: providers } = useApi<Attorney[]>('/appointments/providers');
   const { data: clients } = useApi<UserListItem[]>(staff && !appointment ? '/users?role=client&status=active' : null);
 
   const [clientId, setClientId] = useState(appointment?.clientId ?? presetClientId ?? 0);
-  const [serviceId, setServiceId] = useState(appointment?.serviceId ?? 0);
+  const [serviceId, setServiceId] = useState(appointment?.serviceId ?? presetServiceId ?? 0);
   const [staffId, setStaffId] = useState<number | ''>(appointment?.staffId ?? '');
   const [start, setStart] = useState(appointment ? toLocalInput(appointment.startAt) : '');
   const [notes, setNotes] = useState(appointment?.notes ?? '');
@@ -97,10 +99,10 @@ export function AppointmentForm({
           Client: <strong>{appointment.clientName}</strong>
         </p>
       )}
-      <Field label="Service">
+      <Field label="Meeting type">
         <select required value={serviceId || ''} onChange={(e) => setServiceId(Number(e.target.value))}>
           <option value="" disabled>
-            Select a service…
+            Select a meeting type…
           </option>
           {activeServices.map((s) => (
             <option key={s.id} value={s.id}>
@@ -113,21 +115,21 @@ export function AppointmentForm({
         <Field label="Date & time" hint={service ? `Ends ${service.durationMin} minutes later` : undefined}>
           <input type="datetime-local" required step={900} value={start} onChange={(e) => setStart(e.target.value)} />
         </Field>
-        <Field label="With">
+        <Field label="Attorney">
           <select value={staffId} onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">Any available</option>
+            <option value="">First available</option>
             {providers?.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {p.name}{p.title && ` · ${p.title}`}
               </option>
             ))}
           </select>
         </Field>
       </div>
-      <Field label="Notes (optional)">
+      <Field label="What would you like to discuss? (optional)">
         <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
       </Field>
-      <FormActions busy={busy} label={appointment ? 'Save changes' : 'Book appointment'} onCancel={onCancel} />
+      <FormActions busy={busy} label={appointment ? 'Save changes' : 'Book meeting'} onCancel={onCancel} />
     </form>
   );
 }
@@ -199,7 +201,7 @@ export function PaymentForm({
           {' '}Outstanding: <strong>{formatMoney(outstanding)}</strong>
         </p>
       ) : (
-        <Field label="Appointment (optional)">
+        <Field label="For meeting (optional)">
           <select
             value={appointmentId}
             disabled={!clientId}
@@ -210,7 +212,7 @@ export function PaymentForm({
               if (a && !amount) setAmount((Math.max(0, a.priceCents - a.paidCents) / 100).toFixed(2));
             }}
           >
-            <option value="">Not linked to an appointment</option>
+            <option value="">General retainer / not linked</option>
             {appts
               ?.filter((a) => a.status !== 'cancelled')
               .slice()
@@ -275,18 +277,25 @@ export function UserForm({
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [notes, setNotes] = useState(user?.notes ?? '');
   const [role, setRole] = useState<Role>(user?.role ?? defaultRole);
+  const [title, setTitle] = useState(user?.title ?? '');
+  const isStaffAccount = (user?.role ?? defaultRole) !== 'client';
   const [created, setCreated] = useState<{ user: User; temporaryPassword: string } | null>(null);
   const canSetRole =
     me?.role === 'admin' && user?.id !== me.id && !user?.isDemoAccount && (defaultRole !== 'client' || !!user);
 
   const { busy, error, submit } = useSubmit(
     async () => {
-      const body = { name, email, phone: phone || null, notes: notes || null, ...(canSetRole ? { role } : {}) };
+      const body = {
+        name, email, phone: phone || null, notes: notes || null,
+        ...(isStaffAccount ? { title: title || null } : {}),
+        ...(canSetRole ? { role } : {}),
+      };
       if (user) return { user: await api.patch<User>(`/users/${user.id}`, body) };
       return api.post<{ user: User; temporaryPassword: string }>('/users', {
         ...body,
         phone: phone || undefined,
         notes: notes || undefined,
+        title: title || undefined,
         role,
       });
     },
@@ -323,6 +332,11 @@ export function UserForm({
           <input type="tel" value={phone} maxLength={30} onChange={(e) => setPhone(e.target.value)} />
         </Field>
       </div>
+      {isStaffAccount && (
+        <Field label="Job title" hint="Shown to clients, e.g. Senior Associate">
+          <input value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
+      )}
       {canSetRole && (
         <Field label="Role">
           <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
