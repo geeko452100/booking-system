@@ -59,37 +59,11 @@ export const labels: Record<string, string> = {
   cash: 'Cash',
   bank_transfer: 'Bank transfer',
   other: 'Other',
-  admin: 'Partner',
-  staff: 'Attorney',
-  client: 'Client',
-  // Matter stages
-  intake: 'Intake',
-  investigation: 'Fact-finding',
-  negotiation: 'Negotiation',
-  resolution: 'Resolution',
-  closed: 'Closed',
   // Documents
   requested: 'Requested',
   received: 'Awaiting review',
   reviewed: 'Reviewed',
-  shared: 'From the firm',
-  identification: 'Identification',
-  contract: 'Contract',
-  evidence: 'Evidence',
-  court_filing: 'Court filing',
-  correspondence: 'Correspondence',
-  financial: 'Financial',
-};
-
-export const MATTER_STAGES = ['intake', 'investigation', 'negotiation', 'resolution', 'closed'] as const;
-
-/** What each stage means, in plain words for clients. */
-export const stageHelp: Record<string, string> = {
-  intake: 'We are opening your file and checking for conflicts.',
-  investigation: 'We are gathering documents, facts and evidence.',
-  negotiation: 'We are negotiating or drafting on your behalf.',
-  resolution: 'We are finalizing the outcome and paperwork.',
-  closed: 'This matter is complete.',
+  shared: 'From us',
 };
 
 export function formatBytes(n: number | null | undefined) {
@@ -98,12 +72,6 @@ export function formatBytes(n: number | null | undefined) {
   if (n < 1024 ** 2) return `${Math.round(n / 1024)} KB`;
   return `${(n / 1024 ** 2).toFixed(1)} MB`;
 }
-
-export const teamPhoto = (photo: string | null | undefined) => (photo ? `/img/team/${photo}.jpg` : null);
-export const practicePhoto = (image: string | null | undefined) => `/img/practice/${image || 'consultation'}.jpg`;
-
-/** Bundled practice-area photos an admin can pick from. */
-export const PRACTICE_IMAGES = ['consultation', 'contracts', 'estate', 'litigation', 'drafting', 'disputes'] as const;
 
 export const actionLabel = (action: string) =>
   action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
