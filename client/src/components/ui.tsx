@@ -12,6 +12,15 @@ const statusTone: Record<string, Tone> = {
   pending: 'amber',
   refunded: 'gray',
   failed: 'red',
+  intake: 'gray',
+  investigation: 'blue',
+  negotiation: 'amber',
+  resolution: 'green',
+  closed: 'gray',
+  requested: 'amber',
+  received: 'blue',
+  reviewed: 'green',
+  shared: 'neutral',
 };
 
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
