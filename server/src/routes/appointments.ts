@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { all, one, run } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { isStaff, type AppEnv } from '../lib/auth.js';
+import type { BusinessType } from '../lib/business.js';
 import { HttpError, parseId } from '../lib/http.js';
 
 export const appointmentsRouter = new Hono<AppEnv>();
 
 export const APPOINTMENT_SELECT = `
   SELECT a.id, a.client_id AS clientId, c.name AS clientName, c.email AS clientEmail,
-         a.staff_id AS staffId, st.name AS staffName, st.photo AS staffPhoto,
+         a.staff_id AS staffId, st.name AS staffName, sp.photo AS staffPhoto,
          a.service_id AS serviceId, sv.name AS serviceName, sv.price_cents AS priceCents,
          a.start_at AS startAt, a.end_at AS endAt, a.status, a.notes, a.created_at AS createdAt,
          (SELECT COALESCE(SUM(p.amount_cents), 0) FROM payments p
@@ -17,6 +18,7 @@ export const APPOINTMENT_SELECT = `
   FROM appointments a
   JOIN users c ON c.id = a.client_id
   LEFT JOIN users st ON st.id = a.staff_id
+  LEFT JOIN staff_profiles sp ON sp.user_id = a.staff_id AND sp.biz = a.biz
   JOIN services sv ON sv.id = a.service_id`;
 
 interface AppointmentRow {
@@ -32,24 +34,38 @@ interface AppointmentRow {
 
 const statusSchema = z.enum(['scheduled', 'completed', 'cancelled', 'no_show']);
 const isoDate = z.string().datetime({ offset: true }).transform((s) => new Date(s).toISOString());
-const OVERLAP = 'That time overlaps another meeting for this client or attorney';
+const OVERLAP = 'That time overlaps another booking for this client or team member';
 
 /**
- * SQL condition that is true when another scheduled appointment overlaps the slot for the same
- * client or provider. Used inside the INSERT/UPDATE so the check and the write are one atomic step.
+ * SQL condition that is true when another scheduled appointment in the same business overlaps the
+ * slot for the same client or team member. Used inside the INSERT/UPDATE so the check and the write
+ * are one atomic step.
  */
 const CONFLICT = `EXISTS (
   SELECT 1 FROM appointments
-  WHERE status = 'scheduled' AND id != ? AND start_at < ? AND end_at > ?
+  WHERE biz = ? AND status = 'scheduled' AND id != ? AND start_at < ? AND end_at > ?
     AND (client_id = ? OR (? IS NOT NULL AND staff_id = ?)))`;
-const conflictParams = (p: { excludeId: number; start: string; end: string; clientId: number; staffId: number | null }) =>
-  [p.excludeId, p.end, p.start, p.clientId, p.staffId, p.staffId] as const;
+const conflictParams = (p: {
+  biz: BusinessType;
+  excludeId: number;
+  start: string;
+  end: string;
+  clientId: number;
+  staffId: number | null;
+}) => [p.biz, p.excludeId, p.end, p.start, p.clientId, p.staffId, p.staffId] as const;
 
 const getAppointment = (id: number) => one(`${APPOINTMENT_SELECT} WHERE a.id = ?`, id);
 
-/** Attorneys a client can pick when booking. */
+/** Team members a client can pick when booking, with their title and photo for this business. */
 appointmentsRouter.get('/providers', async (c) =>
-  c.json(await all(`SELECT id, name, title, photo FROM users WHERE role IN ('staff','admin') AND is_active = 1 ORDER BY name`)),
+  c.json(
+    await all(
+      `SELECT u.id, u.name, sp.title, sp.photo FROM users u
+       LEFT JOIN staff_profiles sp ON sp.user_id = u.id AND sp.biz = ?
+       WHERE u.role IN ('staff','admin') AND u.is_active = 1 ORDER BY u.role = 'admin' DESC, u.name`,
+      c.get('biz'),
+    ),
+  ),
 );
 
 appointmentsRouter.get('/', async (c) => {
@@ -63,8 +79,8 @@ appointmentsRouter.get('/', async (c) => {
     })
     .parse(c.req.query());
 
-  const where: string[] = [];
-  const params: (string | number)[] = [];
+  const where = ['a.biz = ?'];
+  const params: (string | number)[] = [c.get('biz')];
   const clientId = isStaff(c) ? q.clientId : c.get('user').id;
   if (clientId) {
     where.push('a.client_id = ?');
@@ -83,19 +99,18 @@ appointmentsRouter.get('/', async (c) => {
     params.push(q.status);
   }
   if (q.q) {
-    where.push('(c.name LIKE ? OR c.email LIKE ? OR sv.name LIKE ?)');
-    params.push(`%${q.q}%`, `%${q.q}%`, `%${q.q}%`);
+    where.push('(c.name LIKE ? OR c.email LIKE ? OR sv.name LIKE ? OR a.notes LIKE ?)');
+    params.push(`%${q.q}%`, `%${q.q}%`, `%${q.q}%`, `%${q.q}%`);
   }
 
-  return c.json(
-    await all(`${APPOINTMENT_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY a.start_at LIMIT 1000`, ...params),
-  );
+  return c.json(await all(`${APPOINTMENT_SELECT} WHERE ${where.join(' AND ')} ORDER BY a.start_at LIMIT 1000`, ...params));
 });
 
-async function loadService(id: number) {
+async function loadService(biz: BusinessType, id: number) {
   const s = await one<{ id: number; duration_min: number; is_active: number }>(
-    'SELECT id, duration_min, is_active FROM services WHERE id = ?',
+    'SELECT id, duration_min, is_active FROM services WHERE id = ? AND biz = ?',
     id,
+    biz,
   );
   if (!s) throw new HttpError(400, 'Unknown service');
   return s;
@@ -104,7 +119,7 @@ async function loadService(id: number) {
 async function assertProvider(staffId: number | null | undefined) {
   if (staffId == null) return;
   const ok = await one(`SELECT 1 FROM users WHERE id = ? AND role IN ('staff','admin') AND is_active = 1`, staffId);
-  if (!ok) throw new HttpError(400, 'Unknown attorney');
+  if (!ok) throw new HttpError(400, 'Unknown team member');
 }
 
 const endOf = (startIso: string, minutes: number) => new Date(new Date(startIso).getTime() + minutes * 60_000).toISOString();
@@ -120,6 +135,7 @@ appointmentsRouter.post('/', async (c) => {
     })
     .parse(await c.req.json());
 
+  const biz = c.get('biz');
   const staff = isStaff(c);
   const clientId = staff ? b.clientId : c.get('user').id;
   if (!clientId) throw new HttpError(400, 'clientId is required');
@@ -127,18 +143,18 @@ appointmentsRouter.post('/', async (c) => {
     throw new HttpError(400, 'Unknown or inactive client');
   }
 
-  const service = await loadService(b.serviceId);
-  if (!service.is_active && !staff) throw new HttpError(400, 'This consultation type is not currently offered');
+  const service = await loadService(biz, b.serviceId);
+  if (!service.is_active && !staff) throw new HttpError(400, 'This service is not currently offered');
   await assertProvider(b.staffId);
   if (!staff && b.startAt <= new Date().toISOString()) throw new HttpError(400, 'Please choose a time in the future');
 
   const end = endOf(b.startAt, service.duration_min);
   const staffId = b.staffId ?? null;
   const { id, changes } = await run(
-    `INSERT INTO appointments (client_id, staff_id, service_id, start_at, end_at, notes)
-     SELECT ?, ?, ?, ?, ?, ? WHERE NOT ${CONFLICT}`,
-    clientId, staffId, service.id, b.startAt, end, b.notes || null,
-    ...conflictParams({ excludeId: 0, start: b.startAt, end, clientId, staffId }),
+    `INSERT INTO appointments (biz, client_id, staff_id, service_id, start_at, end_at, notes)
+     SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT ${CONFLICT}`,
+    biz, clientId, staffId, service.id, b.startAt, end, b.notes || null,
+    ...conflictParams({ biz, excludeId: 0, start: b.startAt, end, clientId, staffId }),
   );
   if (!changes) throw new HttpError(409, OVERLAP);
 
@@ -148,8 +164,9 @@ appointmentsRouter.post('/', async (c) => {
 
 appointmentsRouter.patch('/:id', async (c) => {
   const id = parseId(c.req.param('id'));
-  const appt = await one<AppointmentRow>('SELECT * FROM appointments WHERE id = ?', id);
-  if (!appt) throw new HttpError(404, 'Meeting not found');
+  const biz = c.get('biz');
+  const appt = await one<AppointmentRow>('SELECT * FROM appointments WHERE id = ? AND biz = ?', id, biz);
+  if (!appt) throw new HttpError(404, 'Booking not found');
 
   const b = z
     .object({
@@ -163,12 +180,12 @@ appointmentsRouter.patch('/:id', async (c) => {
 
   if (!isStaff(c)) {
     // Clients may only cancel their own upcoming appointments.
-    if (appt.client_id !== c.get('user').id) throw new HttpError(404, 'Meeting not found');
+    if (appt.client_id !== c.get('user').id) throw new HttpError(404, 'Booking not found');
     if (!(b.status === 'cancelled' && Object.keys(b).length === 1)) {
-      throw new HttpError(403, 'Please message your attorney to change a meeting');
+      throw new HttpError(403, 'Please message us to change a booking');
     }
     if (appt.status !== 'scheduled' || appt.start_at <= new Date().toISOString()) {
-      throw new HttpError(400, 'Only upcoming meetings can be cancelled');
+      throw new HttpError(400, 'Only upcoming bookings can be cancelled');
     }
   }
 
@@ -176,7 +193,7 @@ appointmentsRouter.patch('/:id', async (c) => {
   const startAt = b.startAt ?? appt.start_at;
   const staffId = b.staffId !== undefined ? b.staffId : appt.staff_id;
   const status = b.status ?? appt.status;
-  const endAt = b.startAt || b.serviceId ? endOf(startAt, (await loadService(serviceId)).duration_min) : appt.end_at;
+  const endAt = b.startAt || b.serviceId ? endOf(startAt, (await loadService(biz, serviceId)).duration_min) : appt.end_at;
   if (b.staffId !== undefined) await assertProvider(b.staffId);
 
   const checkConflict =
@@ -186,7 +203,7 @@ appointmentsRouter.patch('/:id', async (c) => {
      WHERE id = ? AND (? = 0 OR NOT ${CONFLICT})`,
     status, startAt, endAt, staffId, serviceId, b.notes !== undefined ? b.notes || null : appt.notes,
     id, Number(checkConflict),
-    ...conflictParams({ excludeId: id, start: startAt, end: endAt, clientId: appt.client_id, staffId }),
+    ...conflictParams({ biz, excludeId: id, start: startAt, end: endAt, clientId: appt.client_id, staffId }),
   );
   if (!changes) throw new HttpError(409, OVERLAP);
 

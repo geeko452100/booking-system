@@ -2,28 +2,29 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api, qs, useApi } from '../api';
 import { isStaffRole, useAuth } from '../auth';
-import { FIRM } from '../components/Layout';
+import { cap, useBusiness } from '../business';
 import { Avatar } from '../components/portal';
 import { Card, Empty, ErrorBanner, Loading, PageHeader } from '../components/ui';
 import { formatDateTime, formatRelative } from '../format';
-import type { Attorney, Message, Thread, UserListItem } from '../types';
+import type { Message, TeamMember, Thread, UserListItem } from '../types';
 
 export function Messages() {
   const { user } = useAuth();
+  const { config } = useBusiness();
   const staff = isStaffRole(user);
   const [params, setParams] = useSearchParams();
   const selected = Number(params.get('client')) || null;
   const threads = useApi<Thread[]>(staff ? '/messages/threads' : null);
-  const { data: team } = useApi<Attorney[]>(staff ? null : '/appointments/providers');
+  const { data: team } = useApi<TeamMember[]>(staff ? null : '/appointments/providers');
   const { data: clients } = useApi<UserListItem[]>(staff ? '/users?role=client&status=active' : null);
 
   if (!staff) {
     return (
       <>
-        <PageHeader title="Messages" subtitle="A private line to your legal team. We usually reply within one business day." />
+        <PageHeader title="Messages" subtitle={`A direct line to the team. ${config.replyTime}`} />
         <div className="grid-2 grid-detail">
           <ThreadView clientId={user!.id} />
-          <Card title="Your legal team">
+          <Card title="Our team">
             <ul className="team-list">
               {team?.map((a) => (
                 <li key={a.id} className="person">
@@ -35,9 +36,7 @@ export function Messages() {
                 </li>
               ))}
             </ul>
-            <p className="muted small">
-              Messages are confidential, but for anything urgent, such as a court deadline today, please call the office.
-            </p>
+            <p className="muted small">For anything urgent on the day, please call us.</p>
           </Card>
         </div>
       </>
@@ -46,7 +45,7 @@ export function Messages() {
 
   return (
     <>
-      <PageHeader title="Messages" subtitle="Secure conversations with clients. Any attorney can reply." />
+      <PageHeader title="Messages" subtitle={`Conversations with ${config.words.clients}. Anyone on the team can reply.`} />
       <div className="inbox">
         <Card className="inbox-list">
           <select
@@ -94,9 +93,10 @@ export function Messages() {
   );
 }
 
-/** One client's conversation with the firm, with a reply box. */
+/** One client's conversation with the business, with a reply box. */
 export function ThreadView({ clientId, onSent, showClientLink }: { clientId: number; onSent?: () => void; showClientLink?: boolean }) {
   const { user } = useAuth();
+  const { config } = useBusiness();
   const staff = isStaffRole(user);
   const { data, error, loading, setData } = useApi<{ clientName: string; messages: Message[] }>(
     `/messages${qs({ clientId: staff ? clientId : undefined })}`,
@@ -134,7 +134,7 @@ export function ThreadView({ clientId, onSent, showClientLink }: { clientId: num
   return (
     <Card
       className="thread"
-      title={staff ? data?.clientName ?? 'Conversation' : `Conversation with ${FIRM}`}
+      title={staff ? data?.clientName ?? 'Conversation' : `Conversation with ${config.name}`}
       actions={showClientLink && <Link to={`/clients/${clientId}`} className="link-small">Client file →</Link>}
     >
       <ErrorBanner message={error} />
@@ -165,7 +165,7 @@ export function ThreadView({ clientId, onSent, showClientLink }: { clientId: num
           rows={3}
           required
           maxLength={4000}
-          placeholder={staff ? `Reply to ${data?.clientName ?? 'client'}…` : 'Write a message to your legal team…'}
+          placeholder={staff ? `Reply to ${data?.clientName ?? cap(config.words.client)}…` : 'Write a message to the team…'}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {

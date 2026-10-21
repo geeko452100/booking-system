@@ -1,42 +1,60 @@
-# Acme Law: Law Firm Client Portal
+# Booking & Client Portal for Local Businesses
 
-A full-stack client portal for **Acme Law**, a fictional law firm. Clients follow their cases, send documents,
-message their attorney, book meetings and pay invoices. Attorneys and partners run the firm side: a case pipeline,
-document requests and review, a shared inbox, scheduling, billing, client accounts and an activity log.
-Built with **React** and **TypeScript**, and runs on **Cloudflare Workers** with a **D1** database.
+One booking and client-portal app that can be set up for different kinds of local business. Pick the business type
+and the whole site changes to fit: the name, colors, photos, wording, services and prices, and which features clients
+see. Built with **React** and **TypeScript**, and runs on **Cloudflare Workers** with a **D1** database.
 
-> **This is a demo project.** Acme Law is not a real firm and nothing here is legal advice. Payments run in test
-> mode only, so no real money is taken and real card numbers are rejected. Document uploads record only a file's name
-> and size; the file itself never leaves the browser.
+| Business type      | Demo name             | Bookings are… | Extra features                                          |
+| ------------------ | --------------------- | ------------- | ------------------------------------------------------- |
+| Home services      | Acme Home Services    | Visits        | **Jobs** tracker (Requested → Quoted → … → Complete), **Files** (quotes, photos, warranties) |
+| Salon & barber     | Acme Salon & Barber   | Appointments  | Kept simple: booking, payments and messages             |
+| Personal training  | Acme Fitness Studio   | Sessions      | **Programs** tracker (Intro → Assessment → … → Complete), **Forms & plans** |
+| Pet grooming       | Acme Pet Grooming     | Appointments  | **Pet records** (vaccinations, report cards), the pet's name on every booking |
+
+Every type has booking, online payments (test mode), secure messages, client accounts, a staff dashboard and an
+activity log.
+
+> **This is a demo project.** The businesses are made up. Payments run in test mode only: no real money is taken and
+> real card numbers are rejected. File uploads record only a file's name and size; the file itself never leaves the browser.
 
 <!-- Screenshots: add images to docs/ and reference them here, e.g. ![Client home](docs/client-home.png) -->
+
+## Choosing the business type
+
+- **The owner sets it** under **My account → Business type** (admin only). It's stored in the database, so the whole
+  site changes for everyone.
+- **On the public demo**, anyone can switch from the sign-in page or the bar at the top of every page. In demo mode the
+  choice is saved in a cookie, so it only changes that visitor's view; the owner's setting stays the default for everyone else.
+
+Each business type has its own services, bookings, payments, jobs or programs, files and message threads. Accounts are
+shared, so the same demo logins work for every type, and a team member's job title and photo depend on the type.
+
+To add a business type, add an entry to `client/src/business.tsx` (name, wording, features, colors in `styles.css`),
+`server/src/business-types.ts` and `server/src/seed-content.ts` (demo services and story), and put its photos in
+`client/public/img/<type>/`.
 
 ## Features
 
 **For clients**
-- **Home:** a photo banner, open matters with a progress tracker, documents the firm is waiting for, the next meeting,
-  the latest message, files shared by the firm, balance due and the legal team with headshots.
-- **Matters:** each case moves through Intake → Fact-finding → Negotiation → Resolution → Closed, with the lead
-  attorney, the next step and its target date.
-- **Documents:** answer the firm's document requests by dragging in a file, upload anything else, and find everything
-  the firm has shared.
-- **Messages:** a private thread with the firm, with unread counts in the sidebar.
-- **Meetings, billing and practice areas:** book a consultation from photo cards, cancel upcoming meetings, and pay
-  invoices with a test card.
+- **Home:** a photo banner, the next booking, open jobs or programs with a progress tracker, files the business is
+  waiting for, the latest message, files shared with them, balance due and the team with headshots.
+- **Booking:** pick a service from photo cards and a team member; cancel upcoming bookings.
+- **Files:** answer the business's requests by dragging in a file, or upload anything else.
+- **Messages:** a private thread with the business, with unread counts in the sidebar.
+- **Billing:** see what's owed and pay with a test card.
 
-**For attorneys and partners**
-- **Dashboard:** today's schedule with one-click Complete / No-show / Reschedule / Cancel, a case pipeline by stage,
-  unread client messages, uploads waiting for review, fees collected, unpaid invoices and locked-account alerts.
-- **Matters:** open a matter, move it between stages and edit the next step the client sees.
-- **Documents:** request documents from a client, share files with them, then mark uploads reviewed or ask again.
+**For the owner and team**
+- **Dashboard:** today's schedule with one-click Complete / No-show / Reschedule / Cancel, a pipeline by stage (when
+  the business uses jobs or programs), unread messages, uploads to review, revenue, unpaid bookings and locked-account alerts.
+- **Jobs / programs:** create them, move them between stages and edit the next step the client sees.
+- **Files:** request files from a client, share files with them, then mark uploads reviewed or ask again.
 - **Messages:** a shared inbox across all client threads.
-- **Clients:** search and filter, a client file with matters, documents, meetings, payments, contact details, internal
-  notes and sign-in history, plus one-click unlock, password reset and deactivation.
-- **Meetings and billing:** double-booking a client or attorney is blocked. Record payments, filter, export to CSV and
-  issue refunds (partners only).
-- **Practice areas:** meeting types with a photo, duration and fee, and whether clients can book them.
-- **Activity log:** every sign-in, failed attempt, lockout, account change, matter update, document, message,
-  booking and payment, with who did it and when.
+- **Clients:** search and filter, a client file with bookings, payments, jobs or programs, files, contact details,
+  internal notes and sign-in history, plus one-click unlock, password reset and deactivation.
+- **Bookings and billing:** double-booking a client or team member is blocked. Record payments, filter, export to CSV
+  and issue refunds (owner only).
+- **Services:** name, photo, duration, price, and whether clients can book it.
+- **Activity log:** every sign-in, failed attempt, lockout, account change, booking, file, message and payment.
 
 **Throughout:** light and dark themes that follow the system setting, and a layout that works on phones.
 
@@ -53,14 +71,15 @@ npm run dev
 
 Open **http://localhost:5173**. The first request loads demo data into a local D1 database. Sign in with:
 
-| Role                       | Who                            | Email                | Password     |
-| -------------------------- | ------------------------------ | -------------------- | ------------ |
-| Partner (admin)            | Eleanor Reid, Managing Partner | `admin@example.com`  | `Admin123!`  |
-| Attorney (staff)           | Sam Rivera, Senior Associate   | `sam@example.com`    | `Staff123!`  |
-| Client                     | Priya Patel                    | `client@example.com` | `Client123!` |
+| Role                | Who          | Email                | Password     |
+| ------------------- | ------------ | -------------------- | ------------ |
+| Owner (admin)       | Eleanor Reid | `admin@example.com`  | `Admin123!`  |
+| Team member (staff) | Sam Rivera   | `sam@example.com`    | `Staff123!`  |
+| Client              | Priya Patel  | `client@example.com` | `Client123!` |
 
-Priya's account tells a story: a commercial lease dispute in negotiation with a draft settlement waiting, an estate plan
-in fact-finding, a closed trademark matter, three outstanding document requests and an unread message from Sam.
+Priya's account tells a short story in each business type: an AC replacement waiting for quote approval (home
+services), a color appointment with an unread note from her stylist (salon), a strength program and a food log to send
+(training), and a rabies certificate to upload for her corgi, Biscuit (pet grooming).
 
 To wipe the local database and reload fresh demo data at any time, run `npm run seed`.
 
@@ -86,8 +105,9 @@ cd ..
 npm run deploy
 ```
 
-> **Upgrading an existing deployment?** The client portal adds `migrations/0002_client_portal.sql`. Apply it with
-> `npx wrangler d1 migrations apply DB --remote` from `server/` **before** deploying, or the hourly demo reset will fail.
+> **Upgrading an existing deployment?** Apply new migrations with `npx wrangler d1 migrations apply DB --remote` from
+> `server/` **before** deploying, or the hourly demo reset will fail. `0003_multi_business.sql` recreates the portal
+> tables (they only held demo data), so run `npm run seed:remote` afterwards to load data for every business type.
 
 Wrangler prints the site's address (`https://booking-system.<your-subdomain>.workers.dev`). The first visit loads
 the demo data. To deploy changes later, just run `npm run deploy` again.
@@ -105,7 +125,8 @@ Demo mode is on by default (`DEMO_MODE` in `server/wrangler.jsonc`) and is desig
 - **The demo logins can't be broken.** They never lock after wrong passwords, and their password, email, role and
   status can't be changed, so one visitor can't lock out the next.
 - **Everyone is signed out at each reset**, with a message explaining why.
-- **One-click sign-in:** the sign-in page has Admin / Staff / Client buttons.
+- **One-click sign-in:** the sign-in page has Owner / Team member / Client buttons.
+- **Business switcher:** visitors can try every business type without affecting each other.
 
 ## Test payments
 
@@ -122,26 +143,28 @@ browser and again on the server. Card numbers are never stored; the payment refe
 
 ## Roles and permissions
 
-In the code and API, partners are `admin` and attorneys are `staff`.
+In the code and API, the owner is `admin` and team members are `staff`. Each business type gives them its own
+names (Owner, Technician, Stylist, Coach, Groomer; Customer, Client, Member).
 
-| Action                                             | Client          | Attorney        | Partner |
-| -------------------------------------------------- | --------------- | --------------- | ------- |
-| View matters and their stage                       | Own             | All             | All     |
-| Open matters, change stage and next step           |                 | ✓               | ✓       |
-| Upload documents / answer document requests        | ✓               |                 |         |
-| Request, share and review documents                |                 | ✓               | ✓       |
-| Send messages                                      | Own thread      | Any client      | ✓       |
-| Book meetings                                      | For self        | For any client  | ✓       |
-| Cancel meetings                                    | Own, upcoming   | ✓               | ✓       |
-| Complete, mark no-show, reschedule                 |                 | ✓               | ✓       |
-| View payments                                      | Own             | All             | All     |
-| Pay online (test card)                             | ✓               |                 |         |
-| Record payments, export CSV                        |                 | ✓               | ✓       |
-| Refund payments                                    |                 |                 | ✓       |
-| Create, edit, unlock clients, reset their password |                 | ✓               | ✓       |
-| Deactivate accounts, change roles                  |                 |                 | ✓       |
-| Manage team accounts and practice areas            | View practice areas | View        | ✓       |
-| View the activity log                              |                 |                 | ✓       |
+| Action                                             | Client          | Team member     | Owner |
+| -------------------------------------------------- | --------------- | --------------- | ----- |
+| View jobs / programs and their stage               | Own             | All             | All   |
+| Create jobs / programs, change stage and next step |                 | ✓               | ✓     |
+| Upload files / answer file requests                | ✓               |                 |       |
+| Request, share and review files                    |                 | ✓               | ✓     |
+| Send messages                                      | Own thread      | Any client      | ✓     |
+| Book                                               | For self        | For any client  | ✓     |
+| Cancel bookings                                    | Own, upcoming   | ✓               | ✓     |
+| Complete, mark no-show, reschedule                 |                 | ✓               | ✓     |
+| View payments                                      | Own             | All             | All   |
+| Pay online (test card)                             | ✓               |                 |       |
+| Record payments, export CSV                        |                 | ✓               | ✓     |
+| Refund payments                                    |                 |                 | ✓     |
+| Create, edit, unlock clients, reset their password |                 | ✓               | ✓     |
+| Deactivate accounts, change roles                  |                 |                 | ✓     |
+| Manage team accounts and services                  | View services   | View services   | ✓     |
+| Change the business type                           |                 |                 | ✓     |
+| View the activity log                              |                 |                 | ✓     |
 
 Permissions are enforced by the API; the interface only hides what a role can't use.
 
@@ -173,10 +196,11 @@ booking-system/
 ├── package.json            npm workspaces and top-level scripts
 ├── client/                 React app (Vite dev server on :5173, proxies /api to :4000)
 │   ├── public/_headers     security headers for the static site
-│   ├── public/img/         bundled photos: sign-in, banner, team headshots, practice areas
+│   ├── public/img/<type>/  bundled photos per business type: sign-in, banner, team, services
 │   └── src/
 │       ├── pages/          one component per screen
 │       ├── components/     layout, forms, checkout, shared UI
+│       ├── business.tsx    business types: names, wording, features, and the current type
 │       ├── api.ts          fetch wrapper and useApi hook
 │       └── auth.tsx        sign-in state
 └── server/                 Cloudflare Worker (wrangler dev on :4000)
@@ -185,10 +209,12 @@ booking-system/
     ├── scripts/            local dev helpers, seed SQL generator
     └── src/
         ├── index.ts        routes, fetch and scheduled handlers
-        ├── routes/         auth, users, matters, documents, messages, appointments, payments, services, dashboard, audit
+        ├── routes/         auth, business, users, projects, documents, messages, appointments, payments, services, dashboard, audit
         ├── lib/            sessions, passwords, audit logging, demo mode
         ├── db.ts           D1 query helpers
-        └── seed-data.ts    demo data
+        ├── business-types.ts  the list of business types
+        ├── seed-content.ts    demo services, team titles and stories per business type
+        └── seed-data.ts       turns that content into demo data
 ```
 
 ## Scripts
@@ -225,7 +251,8 @@ All endpoints are under `/api`, take and return JSON, and use the session cookie
 
 | Area         | Endpoints                                                                                                   |
 | ------------ | ----------------------------------------------------------------------------------------------------------- |
-| Matters      | `GET /matters`, `POST /matters`, `PATCH /matters/:id`                                                       |
+| Business     | `GET /business`, `PUT /business`                                                                            |
+| Projects     | `GET /projects`, `POST /projects`, `PATCH /projects/:id`                                                    |
 | Documents    | `GET /documents`, `POST /documents`, `POST /documents/requests`, `PATCH /documents/:id`                     |
 | Messages     | `GET /messages`, `POST /messages`, `GET /messages/threads`, `GET /messages/unread`                          |
 | Auth         | `POST /auth/login`, `POST /auth/register`, `POST /auth/logout`, `GET /auth/me`, `PATCH /auth/me`, `POST /auth/me/password` |
@@ -249,18 +276,51 @@ All endpoints are under `/api`, take and return JSON, and use the session cookie
 
 All photos are from [Unsplash](https://unsplash.com) and used under the [Unsplash License](https://unsplash.com/license).
 They are bundled in `client/public/img`, because the site's Content Security Policy only allows images it serves itself.
-The people pictured are models, not real attorneys.
+The people pictured are models, not the (made-up) staff.
 
-| File                            | Photographer                                                       | Source |
-| ------------------------------- | ------------------------------------------------------------------ | ------ |
-| `img/library.jpg`               | Giammarco Boscaro                                                  | [unsplash.com/photos/zeH-ljawHtg](https://unsplash.com/photos/zeH-ljawHtg) |
-| `img/courthouse.jpg`            | Sebastian Pichler                                                  | [unsplash.com/photos/bAQH53VquTc](https://unsplash.com/photos/bAQH53VquTc) |
-| `img/team/eleanor-reid.jpg`     | Christina @ wocintechchat.com                                      | [unsplash.com/photos/SJvDxw0azqw](https://unsplash.com/photos/SJvDxw0azqw) |
-| `img/team/sam-rivera.jpg`       | LinkedIn Sales Solutions                                           | [unsplash.com/photos/pAtA8xe_iVM](https://unsplash.com/photos/pAtA8xe_iVM) |
-| `img/team/jordan-lee.jpg`       | Christina @ wocintechchat.com                                      | [unsplash.com/photos/0Zx1bDv5BNY](https://unsplash.com/photos/0Zx1bDv5BNY) |
-| `img/practice/consultation.jpg` | Vitaly Gariev                                                      | [unsplash.com/photos/XjJmfN7QJj4](https://unsplash.com/photos/XjJmfN7QJj4) |
-| `img/practice/contracts.jpg`    | Vitaly Gariev                                                      | [unsplash.com/photos/FKnEYIEVOyI](https://unsplash.com/photos/FKnEYIEVOyI) |
-| `img/practice/estate.jpg`       | Gabrielle Henderson                                                | [unsplash.com/photos/HJckKnwCXxQ](https://unsplash.com/photos/HJckKnwCXxQ) |
-| `img/practice/litigation.jpg`   | Sasun Bughdaryan                                                   | [unsplash.com/photos/ozS0tPf8QT0](https://unsplash.com/photos/ozS0tPf8QT0) |
-| `img/practice/drafting.jpg`     | Scott Graham                                                       | [unsplash.com/photos/OQMZwNd3ThU](https://unsplash.com/photos/OQMZwNd3ThU) |
-| `img/practice/disputes.jpg`     | Tingey Injury Law Firm                                             | [unsplash.com/photos/DZpc4UY8ZtY](https://unsplash.com/photos/DZpc4UY8ZtY) |
+| File | Photographer | Source |
+| ---- | ------------ | ------ |
+| `img/home/hero.jpg` | Sieuwert Otterloo | [unsplash.com/photos/aren8nutd1Q](https://unsplash.com/photos/aren8nutd1Q) |
+| `img/home/banner.jpg` | todd kent | [unsplash.com/photos/178j8tJrNlc](https://unsplash.com/photos/178j8tJrNlc) |
+| `img/home/team/eleanor.jpg` | Clay Elliot | [unsplash.com/photos/mpDV4xaFP8c](https://unsplash.com/photos/mpDV4xaFP8c) |
+| `img/home/team/sam.jpg` | Ryan Hoffman | [unsplash.com/photos/Ft4p5E9HjTQ](https://unsplash.com/photos/Ft4p5E9HjTQ) |
+| `img/home/team/jordan.jpg` | Willian Souza | [unsplash.com/photos/p5BoBF0XJUA](https://unsplash.com/photos/p5BoBF0XJUA) |
+| `img/home/services/ac-tune-up.jpg` | Everett Pachmann | [unsplash.com/photos/JsPkVrHMQoo](https://unsplash.com/photos/JsPkVrHMQoo) |
+| `img/home/services/furnace-check.jpg` | HUUM | [unsplash.com/photos/3_nf1qKJGf4](https://unsplash.com/photos/3_nf1qKJGf4) |
+| `img/home/services/repair.jpg` | Kevin Grieve | [unsplash.com/photos/3CKZS3-o3XU](https://unsplash.com/photos/3CKZS3-o3XU) |
+| `img/home/services/estimate.jpg` | alpha innotec | [unsplash.com/photos/kblddocwPa0](https://unsplash.com/photos/kblddocwPa0) |
+| `img/home/services/deep-clean.jpg` | Vitaly Gariev | [unsplash.com/photos/YWS51jdrfdA](https://unsplash.com/photos/YWS51jdrfdA) |
+| `img/home/services/standard-clean.jpg` | JESHOOTS.COM | [unsplash.com/photos/__ZMnefoI3k](https://unsplash.com/photos/__ZMnefoI3k) |
+| `img/salon/hero.jpg` | Greg Trowman | [unsplash.com/photos/jsuWg7IXx1k](https://unsplash.com/photos/jsuWg7IXx1k) |
+| `img/salon/banner.jpg` | Benyamin Bohlouli | [unsplash.com/photos/LGXN4OSQSa4](https://unsplash.com/photos/LGXN4OSQSa4) |
+| `img/salon/team/eleanor.jpg` | Giorgio Trovato | [unsplash.com/photos/VzusBjHlKM8](https://unsplash.com/photos/VzusBjHlKM8) |
+| `img/salon/team/sam.jpg` | Jurica Koletić | [unsplash.com/photos/7YVZYZeITc8](https://unsplash.com/photos/7YVZYZeITc8) |
+| `img/salon/team/jordan.jpg` | Christina @ wocintechchat.com | [unsplash.com/photos/SJvDxw0azqw](https://unsplash.com/photos/SJvDxw0azqw) |
+| `img/salon/services/womens-cut.jpg` | Alexander Mass | [unsplash.com/photos/g0cSOCHaHiY](https://unsplash.com/photos/g0cSOCHaHiY) |
+| `img/salon/services/mens-cut.jpg` | Nate Johnston | [unsplash.com/photos/tgPrIYnW3g4](https://unsplash.com/photos/tgPrIYnW3g4) |
+| `img/salon/services/beard.jpg` | Nathon Oski | [unsplash.com/photos/fE42nRlBcG8](https://unsplash.com/photos/fE42nRlBcG8) |
+| `img/salon/services/color.jpg` | "Jessie Dee" Dabrowski | [unsplash.com/photos/W6cwaL7PMSw](https://unsplash.com/photos/W6cwaL7PMSw) |
+| `img/salon/services/blowout.jpg` | Adam Winger | [unsplash.com/photos/FkAZqQJTbXM](https://unsplash.com/photos/FkAZqQJTbXM) |
+| `img/salon/services/treatment.jpg` | Lindsay Cash | [unsplash.com/photos/Md_DhaFsnCQ](https://unsplash.com/photos/Md_DhaFsnCQ) |
+| `img/fitness/hero.jpg` | Meghan Holmes | [unsplash.com/photos/buWcS7G1_28](https://unsplash.com/photos/buWcS7G1_28) |
+| `img/fitness/banner.jpg` | Vitaly Gariev | [unsplash.com/photos/rD0poLlu57M](https://unsplash.com/photos/rD0poLlu57M) |
+| `img/fitness/team/eleanor.jpg` | Joecalih | [unsplash.com/photos/1l6UeCc9P9o](https://unsplash.com/photos/1l6UeCc9P9o) |
+| `img/fitness/team/sam.jpg` | Vitaly Gariev | [unsplash.com/photos/V-gUIqzSXig](https://unsplash.com/photos/V-gUIqzSXig) |
+| `img/fitness/team/jordan.jpg` | Samuel Girven | [unsplash.com/photos/Ppua0I4VjqE](https://unsplash.com/photos/Ppua0I4VjqE) |
+| `img/fitness/services/intro.jpg` | Victor Freitas | [unsplash.com/photos/hOuJYX2K5DA](https://unsplash.com/photos/hOuJYX2K5DA) |
+| `img/fitness/services/personal.jpg` | maxhome fitness | [unsplash.com/photos/wSUlQl8HPYc](https://unsplash.com/photos/wSUlQl8HPYc) |
+| `img/fitness/services/assessment.jpg` | Vitaly Gariev | [unsplash.com/photos/6ESp0qoio_I](https://unsplash.com/photos/6ESp0qoio_I) |
+| `img/fitness/services/small-group.jpg` | bruce mars | [unsplash.com/photos/y0SMHt74yqc](https://unsplash.com/photos/y0SMHt74yqc) |
+| `img/fitness/services/partner.jpg` | Jonathan Borba | [unsplash.com/photos/R0y_bEUjiOM](https://unsplash.com/photos/R0y_bEUjiOM) |
+| `img/fitness/services/nutrition.jpg` | Ella Olsson | [unsplash.com/photos/lMcRyBx4G50](https://unsplash.com/photos/lMcRyBx4G50) |
+| `img/pet/hero.jpg` | Victor G | [unsplash.com/photos/N04FIfHhv_k](https://unsplash.com/photos/N04FIfHhv_k) |
+| `img/pet/banner.jpg` | Joe Caione | [unsplash.com/photos/qO-PIF84Vxg](https://unsplash.com/photos/qO-PIF84Vxg) |
+| `img/pet/team/eleanor.jpg` | alex starnes | [unsplash.com/photos/WYE2UhXsU1Y](https://unsplash.com/photos/WYE2UhXsU1Y) |
+| `img/pet/team/sam.jpg` | Александр Гросс | [unsplash.com/photos/dHIRbh9En6I](https://unsplash.com/photos/dHIRbh9En6I) |
+| `img/pet/team/jordan.jpg` | Christina @ wocintechchat.com | [unsplash.com/photos/0Zx1bDv5BNY](https://unsplash.com/photos/0Zx1bDv5BNY) |
+| `img/pet/services/full-groom.jpg` | Buddy AN | [unsplash.com/photos/LpK2xddrElI](https://unsplash.com/photos/LpK2xddrElI) |
+| `img/pet/services/bath.jpg` | Jamie Street | [unsplash.com/photos/ikv10lHZUas](https://unsplash.com/photos/ikv10lHZUas) |
+| `img/pet/services/puppy.jpg` | Alvan Nee | [unsplash.com/photos/eoqnr8ikwFE](https://unsplash.com/photos/eoqnr8ikwFE) |
+| `img/pet/services/cat.jpg` | Reba Spike | [unsplash.com/photos/4y7030O1XPQ](https://unsplash.com/photos/4y7030O1XPQ) |
+| `img/pet/services/deshed.jpg` | Neakasa | [unsplash.com/photos/s1cbq_XroX0](https://unsplash.com/photos/s1cbq_XroX0) |
+| `img/pet/services/spa.jpg` | Hayffield L | [unsplash.com/photos/ZVdZw2p08y4](https://unsplash.com/photos/ZVdZw2p08y4) |

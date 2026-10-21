@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { isStaffRole, useAuth } from '../auth';
+import { useBusiness } from '../business';
 import type { Appointment, AppointmentStatus } from '../types';
 import { AppointmentForm, PaymentForm } from './forms';
 import { Modal } from './ui';
 
-/** Row-level actions for a meeting, adapted to the viewer's role and the appointment's state. */
+/** Row-level actions for a booking, adapted to the viewer's role and the appointment's state. */
 export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onChanged: () => void }) {
   const { user } = useAuth();
+  const { words } = useBusiness().config;
   const [modal, setModal] = useState<'edit' | 'pay' | null>(null);
   const [busy, setBusy] = useState(false);
   const staff = isStaffRole(user);
@@ -29,7 +31,7 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
 
   if (!staff) {
     return upcoming ? (
-      <button className="btn btn-small" disabled={busy} onClick={() => setStatus('cancelled', 'Cancel this meeting?')}>
+      <button className="btn btn-small" disabled={busy} onClick={() => setStatus('cancelled', `Cancel this ${words.booking}?`)}>
         Cancel
       </button>
     ) : null;
@@ -49,8 +51,8 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
             <div className="menu-list">
               <button onClick={() => setModal('edit')}>Reschedule / edit</button>
               <button onClick={() => setStatus('no_show')}>Mark no-show</button>
-              <button className="danger" onClick={() => setStatus('cancelled', 'Cancel this meeting?')}>
-                Cancel meeting
+              <button className="danger" onClick={() => setStatus('cancelled', `Cancel this ${words.booking}?`)}>
+                Cancel {words.booking}
               </button>
             </div>
           </details>
@@ -68,7 +70,7 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
       )}
 
       {modal === 'edit' && (
-        <Modal title="Edit meeting" onClose={() => setModal(null)}>
+        <Modal title={`Edit ${words.booking}`} onClose={() => setModal(null)}>
           <AppointmentForm
             appointment={appt}
             onCancel={() => setModal(null)}

@@ -2,16 +2,19 @@ import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api, qs, useApi } from '../api';
 import { isStaffRole, useAuth } from '../auth';
+import { cap, useBusiness } from '../business';
 import { Icon } from '../components/Icon';
 import { FilePicker } from '../components/portal';
 import { Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, StatusBadge } from '../components/ui';
 import { formatBytes, formatDate, formatRelative, labels } from '../format';
-import type { DocumentCategory, LegalDocument, Matter, UserListItem } from '../types';
+import type { ClientFile, Project, UserListItem } from '../types';
 
-const CATEGORIES: DocumentCategory[] = ['identification', 'contract', 'evidence', 'court_filing', 'correspondence', 'financial', 'other'];
-
+/** File exchange with clients: quotes and photos, forms and plans, or pet records, depending on the business. */
 export function Documents() {
   const { user } = useAuth();
+  const { config } = useBusiness();
+  const { words } = config;
+  const categoryLabel = (key: string) => config.documentCategories.find((c) => c.key === key)?.label ?? 'Other';
   const staff = isStaffRole(user);
   const [params, setParams] = useSearchParams();
   const [modal, setModal] = useState<'upload' | 'request' | null>(null);
@@ -28,7 +31,7 @@ export function Documents() {
     setParams(next, { replace: true });
   };
 
-  const { data, error, loading, reload } = useApi<LegalDocument[]>(`/documents${qs({ status, q })}`);
+  const { data, error, loading, reload } = useApi<ClientFile[]>(`/documents${qs({ status, q })}`);
   const requested = staff ? [] : (data ?? []).filter((d) => d.status === 'requested');
   const rows = staff ? data ?? [] : (data ?? []).filter((d) => d.status !== 'requested');
 
@@ -47,16 +50,16 @@ export function Documents() {
   return (
     <>
       <PageHeader
-        title={staff ? 'Documents' : 'My documents'}
-        subtitle={staff ? 'Files exchanged with clients, and uploads waiting for review.' : 'Send files to your legal team and find everything they have shared with you.'}
+        title={staff ? words.documents : `My ${words.documents.toLowerCase()}`}
+        subtitle={staff ? `Files exchanged with ${words.clients}, and uploads waiting for review.` : 'Send us files and find everything we’ve shared with you.'}
         actions={
           staff ? (
             <>
-              <button className="btn" onClick={() => setModal('upload')}>Share a document</button>
-              <button className="btn btn-primary" onClick={() => setModal('request')}>Request a document</button>
+              <button className="btn" onClick={() => setModal('upload')}>Share a file</button>
+              <button className="btn btn-primary" onClick={() => setModal('request')}>Request a file</button>
             </>
           ) : (
-            <button className="btn btn-primary" onClick={() => setModal('upload')}>Upload a document</button>
+            <button className="btn btn-primary" onClick={() => setModal('upload')}>Upload a file</button>
           )
         }
       />
@@ -64,7 +67,7 @@ export function Documents() {
       <ErrorBanner message={error || actionError} />
 
       {!staff && requested.length > 0 && (
-        <Card title={`Requested by your legal team (${requested.length})`} className="card-accent">
+        <Card title={`We need these from you (${requested.length})`} className="card-accent">
           <ul className="list">
             {requested.map((d) => (
               <li key={d.id} className="request-item">
@@ -72,7 +75,7 @@ export function Documents() {
                   <div>
                     <strong>{d.name}</strong>
                     <div className="muted small">
-                      {d.matterTitle ?? labels[d.category]} · asked by {d.createdByName} {formatRelative(d.createdAt).toLowerCase()}
+                      {d.projectTitle ?? categoryLabel(d.category)} · asked by {d.createdByName} {formatRelative(d.createdAt).toLowerCase()}
                     </div>
                     {d.note && <div className="small request-note">“{d.note}”</div>}
                   </div>
@@ -84,7 +87,7 @@ export function Documents() {
                   <FilePicker
                     onPick={(f) => {
                       setUploadingFor(null);
-                      act(() => api.post('/documents', { requestId: d.id, ...f }), `Thanks! “${f.fileName}” was sent to your legal team.`);
+                      act(() => api.post('/documents', { requestId: d.id, ...f }), `Thanks! We got “${f.fileName}”.`);
                     }}
                   />
                 )}
@@ -98,26 +101,26 @@ export function Documents() {
         <div className="segmented" role="group" aria-label="Status">
           {(staff ? ['', 'received', 'requested', 'reviewed', 'shared'] : ['', 'shared', 'received', 'reviewed']).map((s) => (
             <button key={s} className={status === s ? 'active' : ''} onClick={() => setParam('status', s)}>
-              {s ? (staff ? labels[s] : { shared: 'From the firm', received: 'Sent by me', reviewed: 'Reviewed' }[s]) : 'All'}
+              {s ? (staff ? labels[s] : { shared: 'From us', received: 'Sent by me', reviewed: 'Reviewed' }[s]) : 'All'}
             </button>
           ))}
         </div>
-        <input type="search" className="search" placeholder={staff ? 'Search client or document…' : 'Search documents…'} defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
+        <input type="search" className="search" placeholder={staff ? `Search ${words.client} or file…` : 'Search files…'} defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
       </div>
 
       <Card>
         {loading && !data ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <Empty>No documents in this view.</Empty>
+          <Empty>No files in this view.</Empty>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Document</th>
-                  {staff && <th>Client</th>}
-                  <th>Matter</th>
+                  <th>File</th>
+                  {staff && <th>{cap(words.client)}</th>}
+                  {config.features.projects && <th>{cap(words.project)}</th>}
                   <th>Status</th>
                   <th>Date</th>
                   {staff && <th />}
@@ -132,14 +135,14 @@ export function Documents() {
                         <div>
                           <strong>{d.name}</strong>
                           <div className="muted small">
-                            {d.fileName ? `${d.fileName} · ${formatBytes(d.sizeBytes)}` : labels[d.category]}
+                            {d.fileName ? `${d.fileName} · ${formatBytes(d.sizeBytes)}` : categoryLabel(d.category)}
                           </div>
                           {d.note && <div className="small request-note">{d.note}</div>}
                         </div>
                       </div>
                     </td>
                     {staff && <td><Link to={`/clients/${d.clientId}`} className="strong-link">{d.clientName}</Link></td>}
-                    <td className="muted">{d.matterTitle ?? '—'}</td>
+                    {config.features.projects && <td className="muted">{d.projectTitle ?? '—'}</td>}
                     <td><StatusBadge status={d.status} /></td>
                     <td className="nowrap muted">{formatDate(d.uploadedAt ?? d.createdAt)}</td>
                     {staff && (
@@ -174,7 +177,7 @@ export function Documents() {
 
       {modal && (
         <Modal
-          title={modal === 'request' ? 'Request a document' : staff ? 'Share a document with a client' : 'Upload a document'}
+          title={modal === 'request' ? 'Request a file' : staff ? `Share a file with a ${words.client}` : 'Upload a file'}
           onClose={() => setModal(null)}
         >
           <DocumentForm
@@ -192,7 +195,7 @@ export function Documents() {
   );
 }
 
-/** Request (staff), share (staff) or upload (client) a document. */
+/** Request (staff), share (staff) or upload (client) a file. */
 export function DocumentForm({
   mode,
   clientId: presetClientId,
@@ -205,32 +208,36 @@ export function DocumentForm({
   onCancel: () => void;
 }) {
   const { user } = useAuth();
+  const { config } = useBusiness();
+  const { words } = config;
   const staff = isStaffRole(user);
   const [clientId, setClientId] = useState(presetClientId ?? (staff ? 0 : user!.id));
-  const [matterId, setMatterId] = useState<number | ''>('');
+  const [projectId, setProjectId] = useState<number | ''>('');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<DocumentCategory>(mode === 'request' ? 'financial' : 'other');
+  const [category, setCategory] = useState(config.documentCategories[0]?.key ?? 'other');
   const [note, setNote] = useState('');
   const [file, setFile] = useState<{ fileName: string; sizeBytes: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const { data: clients } = useApi<UserListItem[]>(staff && !presetClientId ? '/users?role=client&status=active' : null);
-  const { data: matters } = useApi<Matter[]>(clientId ? `/matters${qs({ clientId: staff ? clientId : undefined })}` : null);
+  const { data: projects } = useApi<Project[]>(
+    clientId && config.features.projects ? `/projects${qs({ clientId: staff ? clientId : undefined })}` : null,
+  );
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (mode === 'upload' && !file) return setError('Please choose a file');
     setBusy(true);
     setError(null);
-    const common = { matterId: matterId === '' ? null : matterId, category, note: note || undefined };
+    const common = { projectId: projectId === '' ? null : projectId, category, note: note || undefined };
     try {
       if (mode === 'request') {
         await api.post('/documents/requests', { ...common, clientId, name });
-        onSaved(`Request sent. The client will see “${name}” on their Documents page.`);
+        onSaved(`Request sent. The ${words.client} will see “${name}” on their ${words.documents} page.`);
       } else {
         await api.post('/documents', { ...common, clientId: staff ? clientId : undefined, name: name || undefined, ...file! });
-        onSaved(staff ? `“${file!.fileName}” is now shared with the client.` : `Thanks! “${file!.fileName}” was sent to your legal team.`);
+        onSaved(staff ? `“${file!.fileName}” is now shared with the ${words.client}.` : `Thanks! We got “${file!.fileName}”.`);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -243,30 +250,32 @@ export function DocumentForm({
     <form className="form" onSubmit={submit}>
       <ErrorBanner message={error} />
       {clients && (
-        <Field label="Client">
-          <select required value={clientId || ''} onChange={(e) => { setClientId(Number(e.target.value)); setMatterId(''); }}>
-            <option value="" disabled>Select a client…</option>
+        <Field label={cap(words.client)}>
+          <select required value={clientId || ''} onChange={(e) => { setClientId(Number(e.target.value)); setProjectId(''); }}>
+            <option value="" disabled>Select a {words.client}…</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
           </select>
         </Field>
       )}
-      <Field label={mode === 'request' ? 'What do you need?' : 'Title (optional)'} hint={mode === 'request' ? 'e.g. Pay stubs for the last 3 months' : 'Defaults to the file name'}>
+      <Field label={mode === 'request' ? 'What do you need?' : 'Title (optional)'} hint={mode === 'request' ? undefined : 'Defaults to the file name'}>
         <input required={mode === 'request'} maxLength={150} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <div className="form-row">
-        <Field label="Matter">
-          <select value={matterId} disabled={!clientId} onChange={(e) => setMatterId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">General / not specific</option>
-            {matters?.filter((m) => m.stage !== 'closed').map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
-          </select>
-        </Field>
+        {config.features.projects && (
+          <Field label={cap(words.project)}>
+            <select value={projectId} disabled={!clientId} onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : '')}>
+              <option value="">General / not specific</option>
+              {projects?.filter((p) => p.stage !== 'done').map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Type">
-          <select value={category} onChange={(e) => setCategory(e.target.value as DocumentCategory)}>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{labels[c] ?? 'Other'}</option>)}
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {config.documentCategories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
         </Field>
       </div>
-      <Field label={mode === 'request' ? 'Note to the client (optional)' : 'Note (optional)'}>
+      <Field label={mode === 'request' ? `Note to the ${words.client} (optional)` : 'Note (optional)'}>
         <textarea rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
       {mode === 'upload' &&
@@ -282,7 +291,7 @@ export function DocumentForm({
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Sending…' : mode === 'request' ? 'Send request' : staff ? 'Share with client' : 'Send to my legal team'}
+          {busy ? 'Sending…' : mode === 'request' ? 'Send request' : staff ? `Share with ${words.client}` : 'Send to us'}
         </button>
       </div>
     </form>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { qs, useApi } from '../api';
 import { useAuth } from '../auth';
+import { cap, useBusiness } from '../business';
 import { AppointmentActions, PaymentState } from '../components/AppointmentActions';
 import { AppointmentForm, PaymentForm } from '../components/forms';
 import { BarChart, Card, Empty, ErrorBanner, Loading, Modal, PageHeader, StatCard, StatusBadge } from '../components/ui';
@@ -10,6 +11,8 @@ import type { DashboardSummary } from '../types';
 
 export function Dashboard() {
   const { user } = useAuth();
+  const { config } = useBusiness();
+  const { words, features, stages } = config;
   const [modal, setModal] = useState<'book' | 'pay' | null>(null);
   const url = useMemo(
     () => `/dashboard/summary${qs({ dayStart: startOfDay(0).toISOString(), dayEnd: startOfDay(1).toISOString() })}`,
@@ -29,7 +32,7 @@ export function Dashboard() {
         actions={
           <>
             <button className="btn" onClick={() => setModal('pay')}>Record payment</button>
-            <button className="btn btn-primary" onClick={() => setModal('book')}>Schedule meeting</button>
+            <button className="btn btn-primary" onClick={() => setModal('book')}>New {words.booking}</button>
           </>
         }
       />
@@ -38,20 +41,25 @@ export function Dashboard() {
       {data && (
         <>
           <div className="stats">
-            <StatCard label="Today's meetings" value={data.stats.todayCount} hint={`${data.stats.upcoming7d} booked in the next 7 days`} />
-            <StatCard label="Open matters" value={data.stats.openMatters} hint={`${data.stats.activeClients} active clients · +${data.stats.newClients30d} in 30 days`} />
+            <StatCard label={`Today's ${words.bookings}`} value={data.stats.todayCount} hint={`${data.stats.upcoming7d} booked in the next 7 days`} />
+            {features.projects && (
+              <StatCard label={`Open ${words.projects}`} value={data.stats.openProjects} hint={<Link to="/projects">View all →</Link>} />
+            )}
             <StatCard
-              label="Unread client messages"
+              label="Unread messages"
               value={data.stats.unreadMessages}
               tone={data.stats.unreadMessages ? 'alert' : undefined}
               hint={<Link to="/messages">Open inbox →</Link>}
             />
-            <StatCard
-              label="Uploads to review"
-              value={data.stats.documentsToReview}
-              hint={<Link to="/documents?status=received">{data.stats.documentsRequested} requests outstanding →</Link>}
-            />
-            <StatCard label="Fees collected · 30 days" value={formatMoney(data.stats.revenue30dCents)} hint={`${formatMoney(data.stats.pendingCents)} pending`} />
+            {features.documents && (
+              <StatCard
+                label="Uploads to review"
+                value={data.stats.documentsToReview}
+                hint={<Link to="/documents?status=received">{data.stats.documentsRequested} requests outstanding →</Link>}
+              />
+            )}
+            <StatCard label="Revenue · 30 days" value={formatMoney(data.stats.revenue30dCents)} hint={`${formatMoney(data.stats.pendingCents)} pending`} />
+            <StatCard label={`Active ${words.clients}`} value={data.stats.activeClients} hint={`+${data.stats.newClients30d} new in 30 days`} />
             {data.stats.lockedAccounts > 0 && (
               <StatCard
                 tone="alert"
@@ -64,19 +72,21 @@ export function Dashboard() {
 
           <div className="grid-2">
             <div className="stack">
-            <Card title="Case pipeline" actions={<Link to="/matters" className="link-small">All matters →</Link>}>
-              <div className="pipeline">
-                {data.matterStages.map((s) => (
-                  <Link key={s.stage} to={`/matters?stage=${s.stage}`} className={`pipeline-step stage-${s.stage}`}>
-                    <span className="pipeline-count">{s.count}</span>
-                    <span className="small">{labels[s.stage]}</span>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-            <Card title="Today's schedule" actions={<Link to="/appointments" className="link-small">All meetings →</Link>}>
+            {features.projects && (
+              <Card title={`${cap(words.project)} pipeline`} actions={<Link to="/projects" className="link-small">All {words.projects} →</Link>}>
+                <div className="pipeline">
+                  {data.projectStages.map((s) => (
+                    <Link key={s.stage} to={`/projects?stage=${s.stage}`} className={`pipeline-step stage-${s.stage}`}>
+                      <span className="pipeline-count">{s.count}</span>
+                      <span className="small">{stages[s.stage]}</span>
+                    </Link>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <Card title="Today's schedule" actions={<Link to="/appointments" className="link-small">All {words.bookings} →</Link>}>
               {data.today.length === 0 ? (
-                <Empty>No meetings today.</Empty>
+                <Empty>No {words.bookings} today.</Empty>
               ) : (
                 <ul className="schedule">
                   {data.today.map((a) => (
@@ -104,6 +114,7 @@ export function Dashboard() {
             </div>
 
             <div className="stack">
+              {features.documents && (
               <Card title="Uploads awaiting review" actions={<Link to="/documents?status=received" className="link-small">All →</Link>}>
                 {data.toReview.length === 0 ? (
                   <Empty>Nothing waiting for review.</Empty>
@@ -122,7 +133,8 @@ export function Dashboard() {
                   </ul>
                 )}
               </Card>
-              <Card title="Fees collected · last 14 days">
+              )}
+              <Card title="Revenue · last 14 days">
                 <BarChart
                   format={formatMoney}
                   data={data.revenueByDay.map((d) => ({
@@ -133,7 +145,7 @@ export function Dashboard() {
               </Card>
               <Card title="Unpaid invoices">
                 {data.unpaid.length === 0 ? (
-                  <Empty>Every completed meeting has been paid for. 🎉</Empty>
+                  <Empty>Every completed {words.booking} has been paid for. 🎉</Empty>
                 ) : (
                   <ul className="list">
                     {data.unpaid.map((a) => (
@@ -179,7 +191,7 @@ export function Dashboard() {
       )}
 
       {modal === 'book' && (
-        <Modal title="Schedule a meeting" onClose={() => setModal(null)}>
+        <Modal title={`New ${words.booking}`} onClose={() => setModal(null)}>
           <AppointmentForm onCancel={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
         </Modal>
       )}

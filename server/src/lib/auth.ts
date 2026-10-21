@@ -3,6 +3,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { sign, verify } from 'hono/jwt';
 import { one, scalar } from '../db.js';
+import type { BusinessType } from './business.js';
 import { HttpError } from './http.js';
 
 export type Role = 'admin' | 'staff' | 'client';
@@ -14,7 +15,7 @@ export interface AuthUser {
   email: string;
 }
 
-export type AppEnv = { Variables: { user: AuthUser } };
+export type AppEnv = { Variables: { user: AuthUser; biz: BusinessType } };
 
 const COOKIE = 'session';
 const SESSION_HOURS = 8;

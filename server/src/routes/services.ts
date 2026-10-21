@@ -14,7 +14,7 @@ type ServiceRow = Record<string, unknown> & { isActive: number };
 const toService = (r: ServiceRow | null) => r && { ...r, isActive: !!r.isActive };
 
 servicesRouter.get('/', async (c) => {
-  const rows = await all<ServiceRow>(`${SELECT} ${isStaff(c) ? '' : 'WHERE is_active = 1'} ORDER BY name`);
+  const rows = await all<ServiceRow>(`${SELECT} WHERE biz = ? ${isStaff(c) ? '' : 'AND is_active = 1'} ORDER BY id`, c.get('biz'));
   return c.json(rows.map(toService));
 });
 
@@ -23,7 +23,7 @@ const serviceSchema = z.object({
   description: z.string().trim().max(500).nullable().optional(),
   durationMin: z.number().int().min(5).max(24 * 60),
   priceCents: z.number().int().min(0),
-  // One of the bundled photos in client/public/img/practice.
+  // One of the bundled photos in client/public/img/<biz>/services.
   image: z.string().regex(/^[a-z-]+$/).nullable().optional(),
   isActive: z.boolean().default(true),
 });
@@ -31,8 +31,8 @@ const serviceSchema = z.object({
 servicesRouter.post('/', requireRole('admin'), async (c) => {
   const b = serviceSchema.parse(await c.req.json());
   const { id } = await run(
-    'INSERT INTO services (name, description, duration_min, price_cents, image, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-    b.name, b.description || null, b.durationMin, b.priceCents, b.image || null, b.isActive,
+    'INSERT INTO services (biz, name, description, duration_min, price_cents, image, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    c.get('biz'), b.name, b.description || null, b.durationMin, b.priceCents, b.image || null, b.isActive,
   );
   await audit(c, 'create_service', 'service', id, { name: b.name });
   return c.json(toService(await one<ServiceRow>(`${SELECT} WHERE id = ?`, id)), 201);
@@ -42,8 +42,8 @@ servicesRouter.put('/:id', requireRole('admin'), async (c) => {
   const id = parseId(c.req.param('id'));
   const b = serviceSchema.parse(await c.req.json());
   const { changes } = await run(
-    'UPDATE services SET name = ?, description = ?, duration_min = ?, price_cents = ?, image = ?, is_active = ? WHERE id = ?',
-    b.name, b.description || null, b.durationMin, b.priceCents, b.image || null, b.isActive, id,
+    'UPDATE services SET name = ?, description = ?, duration_min = ?, price_cents = ?, image = ?, is_active = ? WHERE id = ? AND biz = ?',
+    b.name, b.description || null, b.durationMin, b.priceCents, b.image || null, b.isActive, id, c.get('biz'),
   );
   if (!changes) throw new HttpError(404, 'Service not found');
   await audit(c, 'update_service', 'service', id, { name: b.name });

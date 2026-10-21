@@ -1,10 +1,10 @@
+import type { Stage } from './business';
+
 export type Role = 'admin' | 'staff' | 'client';
 export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 export type PaymentMethod = 'card' | 'cash' | 'bank_transfer' | 'other';
-export type MatterStage = 'intake' | 'investigation' | 'negotiation' | 'resolution' | 'closed';
 export type DocumentStatus = 'requested' | 'received' | 'reviewed' | 'shared';
-export type DocumentCategory = 'identification' | 'contract' | 'evidence' | 'court_filing' | 'correspondence' | 'financial' | 'other';
 
 export interface User {
   id: number;
@@ -19,9 +19,9 @@ export interface User {
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   notes: string | null;
-  /** Headshot file name in /img/team (staff only). */
+  /** Headshot file name in /img/<business>/team (staff only). */
   photo: string | null;
-  /** Job title, e.g. "Senior Associate" (staff only). */
+  /** Job title in the current business, e.g. "Lead Groomer" (staff only). */
   title: string | null;
   createdAt: string;
   isDemoAccount: boolean;
@@ -39,7 +39,7 @@ export interface Service {
   description: string | null;
   durationMin: number;
   priceCents: number;
-  /** Photo file name in /img/practice. */
+  /** Photo file name in /img/<business>/services. */
   image: string | null;
   isActive: boolean;
 }
@@ -106,27 +106,28 @@ export interface DashboardSummary {
     lockedAccounts: number;
     cancelled30d: number;
     total30d: number;
-    openMatters: number;
+    openProjects: number;
     documentsToReview: number;
     documentsRequested: number;
     unreadMessages: number;
   };
-  matterStages: { stage: MatterStage; count: number }[];
-  toReview: LegalDocument[];
+  projectStages: { stage: Stage; count: number }[];
+  toReview: ClientFile[];
   revenueByDay: { day: string; cents: number }[];
   today: Appointment[];
   recentPayments: Payment[];
   unpaid: Appointment[];
 }
 
-export interface Attorney {
+export interface TeamMember {
   id: number;
   name: string;
   title: string | null;
   photo: string | null;
 }
 
-export interface Matter {
+/** A tracked piece of work for a client: a repair job, a training program. */
+export interface Project {
   id: number;
   clientId: number;
   clientName: string;
@@ -135,8 +136,8 @@ export interface Matter {
   staffTitle: string | null;
   staffPhoto: string | null;
   title: string;
-  practice: string;
-  stage: MatterStage;
+  kind: string;
+  stage: Stage;
   nextStep: string | null;
   nextDate: string | null;
   openRequests: number;
@@ -144,15 +145,15 @@ export interface Matter {
   createdAt: string;
 }
 
-/** Named LegalDocument to avoid clashing with the DOM's Document. */
-export interface LegalDocument {
+/** Named ClientFile to avoid clashing with the DOM's Document. */
+export interface ClientFile {
   id: number;
   clientId: number;
   clientName: string;
-  matterId: number | null;
-  matterTitle: string | null;
+  projectId: number | null;
+  projectTitle: string | null;
   name: string;
-  category: DocumentCategory;
+  category: string;
   status: DocumentStatus;
   fileName: string | null;
   sizeBytes: number | null;

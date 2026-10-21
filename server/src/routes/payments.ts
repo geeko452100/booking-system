@@ -35,8 +35,8 @@ const getPayment = (id: number) => one(`${PAYMENT_SELECT} WHERE p.id = ?`, id);
 
 function queryPayments(c: Context<AppEnv>) {
   const q = filterSchema.parse(c.req.query());
-  const where: string[] = [];
-  const params: (string | number)[] = [];
+  const where = ['p.biz = ?'];
+  const params: (string | number)[] = [c.get('biz')];
   const clientId = isStaff(c) ? q.clientId : c.get('user').id;
   if (clientId) {
     where.push('p.client_id = ?');
@@ -63,7 +63,7 @@ function queryPayments(c: Context<AppEnv>) {
     params.push(`%${q.q}%`, `%${q.q}%`);
   }
   return all<Record<string, unknown>>(
-    `${PAYMENT_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY p.paid_at DESC LIMIT 2000`,
+    `${PAYMENT_SELECT} WHERE ${where.join(' AND ')} ORDER BY p.paid_at DESC LIMIT 2000`,
     ...params,
   );
 }
@@ -102,14 +102,18 @@ paymentsRouter.post('/', requireRole('admin', 'staff'), async (c) => {
 
   if (!(await one(`SELECT 1 FROM users WHERE id = ? AND role = 'client'`, b.clientId))) throw new HttpError(400, 'Unknown client');
   if (b.appointmentId) {
-    const appt = await one<{ client_id: number }>('SELECT client_id FROM appointments WHERE id = ?', b.appointmentId);
-    if (!appt || appt.client_id !== b.clientId) throw new HttpError(400, 'That meeting does not belong to this client');
+    const appt = await one<{ client_id: number }>(
+      'SELECT client_id FROM appointments WHERE id = ? AND biz = ?',
+      b.appointmentId,
+      c.get('biz'),
+    );
+    if (!appt || appt.client_id !== b.clientId) throw new HttpError(400, 'That booking does not belong to this client');
   }
 
   const { id } = await run(
-    `INSERT INTO payments (client_id, appointment_id, amount_cents, method, status, reference, recorded_by, paid_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    b.clientId, b.appointmentId ?? null, b.amountCents, b.method, b.status, b.reference || null,
+    `INSERT INTO payments (biz, client_id, appointment_id, amount_cents, method, status, reference, recorded_by, paid_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    c.get('biz'), b.clientId, b.appointmentId ?? null, b.amountCents, b.method, b.status, b.reference || null,
     c.get('user').id, b.paidAt ?? new Date().toISOString(),
   );
   await audit(c, 'record_payment', 'payment', id, { clientId: b.clientId, amountCents: b.amountCents });
@@ -119,7 +123,7 @@ paymentsRouter.post('/', requireRole('admin', 'staff'), async (c) => {
 paymentsRouter.patch('/:id/status', requireRole('admin', 'staff'), async (c) => {
   const id = parseId(c.req.param('id'));
   const { status } = z.object({ status: statusSchema }).parse(await c.req.json());
-  const current = await one<{ status: string }>('SELECT status FROM payments WHERE id = ?', id);
+  const current = await one<{ status: string }>('SELECT status FROM payments WHERE id = ? AND biz = ?', id, c.get('biz'));
   if (!current) throw new HttpError(404, 'Payment not found');
   if (status === 'refunded' && c.get('user').role !== 'admin') throw new HttpError(403, 'Only administrators can issue refunds');
   if (current.status === 'refunded') throw new HttpError(400, 'Refunded payments cannot be changed');
@@ -162,9 +166,10 @@ paymentsRouter.post('/checkout', requireRole('client'), async (c) => {
   const appt = await one<{ status: string; priceCents: number; paidCents: number }>(
     `SELECT a.status, sv.price_cents AS priceCents, ${PAID_SO_FAR.replace('?', 'a.id')} AS paidCents
      FROM appointments a JOIN services sv ON sv.id = a.service_id
-     WHERE a.id = ? AND a.client_id = ?`,
+     WHERE a.id = ? AND a.client_id = ? AND a.biz = ?`,
     b.appointmentId,
     me.id,
+    c.get('biz'),
   );
   if (!appt) throw new HttpError(404, 'Invoice not found');
   if (appt.status === 'cancelled' || appt.status === 'no_show') throw new HttpError(400, 'This invoice cannot be paid online');
@@ -175,9 +180,9 @@ paymentsRouter.post('/checkout', requireRole('client'), async (c) => {
   const reference = `TEST-${cardNumber.slice(-4)}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
   // Only insert if nothing was paid in the meantime, so a double-click can't pay twice.
   const { id, changes } = await run(
-    `INSERT INTO payments (client_id, appointment_id, amount_cents, method, status, reference, recorded_by, paid_at)
-     SELECT ?, ?, ?, 'card', ?, ?, ?, ? WHERE ${PAID_SO_FAR} = ?`,
-    me.id, b.appointmentId, amount, approved ? 'paid' : 'failed', reference, me.id, new Date().toISOString(),
+    `INSERT INTO payments (biz, client_id, appointment_id, amount_cents, method, status, reference, recorded_by, paid_at)
+     SELECT ?, ?, ?, ?, 'card', ?, ?, ?, ? WHERE ${PAID_SO_FAR} = ?`,
+    c.get('biz'), me.id, b.appointmentId, amount, approved ? 'paid' : 'failed', reference, me.id, new Date().toISOString(),
     b.appointmentId, appt.paidCents,
   );
   if (!changes) throw new HttpError(409, 'This invoice was just paid');

@@ -1,22 +1,28 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../auth';
+import { useBusiness } from '../business';
 import { useDemo } from '../demo';
-import { Brand, FIRM } from '../components/Layout';
+import { Brand } from '../components/Layout';
+import { BusinessPicker } from '../components/portal';
 import { ErrorBanner, Field } from '../components/ui';
 
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  const { type, config, demoMode } = useBusiness();
   return (
     <div className="auth-page">
       <aside className="auth-hero">
-        <img src="/img/library.jpg" alt="" className="auth-hero-img" />
+        <img src={`/img/${type}/hero.jpg`} alt="" className="auth-hero-img" />
         <div className="auth-hero-text">
-          <p className="eyebrow">Client portal</p>
-          <h2>Your case, your documents and your legal team, all in one secure place.</h2>
-          <p>
-            Track each matter, send documents securely, message your attorney, book meetings and pay invoices online.
-          </p>
-          <p className="auth-hero-note">{FIRM} is a fictional firm, made up for this demo.</p>
+          <p className="eyebrow">{config.tagline}</p>
+          <h2>{config.hero.headline}</h2>
+          <p>{config.hero.copy}</p>
+          {demoMode && (
+            <div className="auth-hero-picker">
+              <p className="auth-hero-note">This is a demo. See the same portal set up for a different kind of business:</p>
+              <BusinessPicker />
+            </div>
+          )}
         </div>
       </aside>
       <main className="auth-main">
@@ -33,6 +39,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
 
 export function Login() {
   const { login, notice } = useAuth();
+  const { config } = useBusiness();
   const demo = useDemo();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -55,7 +62,7 @@ export function Login() {
   };
 
   return (
-    <AuthShell title="Sign in" subtitle="Welcome back. Sign in to see your matters, documents and messages.">
+    <AuthShell title="Sign in" subtitle={`Welcome back. Sign in to manage your ${config.words.bookings}, payments and messages.`}>
       <form className="form" onSubmit={submit}>
         {notice && !error && <div className="alert alert-warn">{notice}</div>}
         <ErrorBanner message={error} />
@@ -70,7 +77,7 @@ export function Login() {
         </button>
       </form>
       <p className="auth-foot">
-        New client? <Link to="/register">Request a portal account</Link>
+        New here? <Link to="/register">Create an account</Link>
       </p>
       {demo?.demoMode && demo.accounts && (
         <div className="demo-hint">
@@ -101,6 +108,7 @@ export function Login() {
 
 export function Register() {
   const { register } = useAuth();
+  const { config } = useBusiness();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +131,7 @@ export function Register() {
   };
 
   return (
-    <AuthShell title="Create your portal account" subtitle="Book a consultation and keep in touch with your legal team.">
+    <AuthShell title="Create your account" subtitle={`Book ${config.words.bookings} online and keep in touch with us.`}>
       <form className="form" onSubmit={submit}>
         <ErrorBanner message={error} />
         <Field label="Full name">

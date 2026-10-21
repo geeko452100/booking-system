@@ -2,43 +2,54 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useApi } from '../api';
 import { useAuth } from '../auth';
+import { cap, useBusiness, type BusinessConfig } from '../business';
 import { useDemo } from '../demo';
-import { labels } from '../format';
 import type { Role } from '../types';
 import { Icon } from './Icon';
-import { Avatar } from './portal';
-
-export const FIRM = 'Acme Law';
+import { Avatar, BusinessPicker } from './portal';
 
 export function Brand({ large }: { large?: boolean }) {
+  const { config } = useBusiness();
   return (
     <div className={`brand ${large ? 'brand-lg' : ''}`}>
-      <span className="brand-mark"><Icon name="scale" /></span>
+      <span className="brand-mark"><Icon name={config.icon} /></span>
       <span className="brand-text">
-        <span className="brand-name">{FIRM}</span>
-        <span className="brand-sub">{large ? 'Attorneys at Law · Client Portal' : 'Client Portal'}</span>
+        <span className="brand-name">{config.name}</span>
+        <span className="brand-sub">{large ? config.tagline : 'Client portal'}</span>
       </span>
     </div>
   );
 }
 
-const nav: { to: string; label: string; icon: string; roles: Role[] }[] = [
-  { to: '/', label: 'Dashboard', icon: 'dashboard', roles: ['admin', 'staff'] },
-  { to: '/', label: 'Home', icon: 'dashboard', roles: ['client'] },
-  { to: '/matters', label: 'Matters', icon: 'briefcase', roles: ['admin', 'staff', 'client'] },
-  { to: '/messages', label: 'Messages', icon: 'message', roles: ['admin', 'staff', 'client'] },
-  { to: '/documents', label: 'Documents', icon: 'folder', roles: ['admin', 'staff', 'client'] },
-  { to: '/appointments', label: 'Meetings', icon: 'calendar', roles: ['admin', 'staff', 'client'] },
-  { to: '/payments', label: 'Billing', icon: 'card', roles: ['admin', 'staff', 'client'] },
-  { to: '/clients', label: 'Clients', icon: 'users', roles: ['admin', 'staff'] },
-  { to: '/services', label: 'Practice areas', icon: 'list', roles: ['admin', 'staff', 'client'] },
-  { to: '/staff', label: 'Team', icon: 'badge', roles: ['admin'] },
-  { to: '/audit', label: 'Activity log', icon: 'shield', roles: ['admin'] },
-  { to: '/account', label: 'My account', icon: 'user', roles: ['admin', 'staff', 'client'] },
-];
+interface NavItem {
+  to: string;
+  label: string;
+  icon: string;
+  roles: Role[];
+}
+
+/** The sidebar, worded for the business and without the features it doesn't use. */
+function navFor({ words, features }: BusinessConfig): NavItem[] {
+  const everyone: Role[] = ['admin', 'staff', 'client'];
+  return [
+    { to: '/', label: 'Dashboard', icon: 'dashboard', roles: ['admin', 'staff'] },
+    { to: '/', label: 'Home', icon: 'dashboard', roles: ['client'] },
+    ...(features.projects ? [{ to: '/projects', label: cap(words.projects), icon: 'briefcase', roles: everyone }] : []),
+    { to: '/appointments', label: cap(words.bookings), icon: 'calendar', roles: everyone },
+    { to: '/messages', label: 'Messages', icon: 'message', roles: everyone },
+    ...(features.documents ? [{ to: '/documents', label: words.documents, icon: 'folder', roles: everyone }] : []),
+    { to: '/payments', label: 'Billing', icon: 'card', roles: everyone },
+    { to: '/clients', label: cap(words.clients), icon: 'users', roles: ['admin', 'staff'] },
+    { to: '/services', label: 'Services', icon: 'list', roles: everyone },
+    { to: '/staff', label: 'Team', icon: 'badge', roles: ['admin'] },
+    { to: '/audit', label: 'Activity log', icon: 'shield', roles: ['admin'] },
+    { to: '/account', label: 'My account', icon: 'user', roles: everyone },
+  ];
+}
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const { config } = useBusiness();
   const navigate = useNavigate();
   const demo = useDemo();
   const { pathname } = useLocation();
@@ -55,7 +66,7 @@ export function Layout() {
       <aside className="sidebar">
         <Brand />
         <nav className="nav">
-          {nav
+          {navFor(config)
             .filter((n) => n.roles.includes(user.role))
             .map((n) => (
               <NavLink key={n.label} to={n.to} end={n.to === '/'} className="nav-link">
@@ -72,7 +83,7 @@ export function Layout() {
             <Avatar name={user.name} photo={user.photo} size={34} />
             <div className="me-text">
               <div className="me-name">{user.name}</div>
-              <div className="me-role">{user.title ?? labels[user.role]}</div>
+              <div className="me-role">{user.title ?? config.roles[user.role]}</div>
             </div>
           </div>
           <button
@@ -90,11 +101,14 @@ export function Layout() {
       <main className="main">
         {demo?.demoMode && (
           <div className="demo-bar" role="note">
-            <strong>Demo site.</strong> {FIRM} is a fictional law firm; no real legal advice is given. Everyone shares this
-            data, and it resets every {demo.resetMinutes} minutes
-            {demo.nextResetAt &&
-              ` (next reset at ${new Date(demo.nextResetAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })})`}
-            . Feel free to click around and change things.
+            <p>
+              <strong>Demo site.</strong> {config.name} is a made-up business. Everyone shares this data, and it resets
+              every {demo.resetMinutes} minutes
+              {demo.nextResetAt &&
+                ` (next reset at ${new Date(demo.nextResetAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })})`}
+              . Try it as a different kind of business:
+            </p>
+            <BusinessPicker compact />
           </div>
         )}
         {user.mustChangePassword && !user.isDemoAccount && (
