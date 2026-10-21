@@ -8,6 +8,8 @@ import { HttpError, parseId } from '../lib/http.js';
 import { hashPassword } from '../lib/password.js';
 import { publicUser, tempPassword, type UserRow } from '../lib/users.js';
 import { APPOINTMENT_SELECT } from './appointments.js';
+import { DOCUMENT_SELECT } from './documents.js';
+import { MATTER_SELECT } from './matters.js';
 import { PAYMENT_SELECT } from './payments.js';
 
 /** Account management for staff and admins. Staff manage client accounts; admins manage everyone. */
@@ -82,7 +84,7 @@ usersRouter.get('/:id', async (c) => {
   const user = await loadUser(parseId(c.req.param('id')));
   assertCanManage(c, user);
 
-  const [appointments, payments, activity] = await Promise.all([
+  const [appointments, payments, activity, matters, documents] = await Promise.all([
     all(`${APPOINTMENT_SELECT} WHERE a.client_id = ? ORDER BY a.start_at DESC`, user.id),
     all(`${PAYMENT_SELECT} WHERE p.client_id = ? ORDER BY p.paid_at DESC`, user.id),
     all(
@@ -92,8 +94,10 @@ usersRouter.get('/:id', async (c) => {
        ORDER BY l.id DESC LIMIT 25`,
       user.id,
     ),
+    all(`${MATTER_SELECT} WHERE m.client_id = ? ORDER BY m.stage = 'closed', m.updated_at DESC`, user.id),
+    all(`${DOCUMENT_SELECT} WHERE d.client_id = ? ORDER BY COALESCE(d.uploaded_at, d.created_at) DESC`, user.id),
   ]);
-  return c.json({ user: publicUser(user), appointments, payments, activity });
+  return c.json({ user: publicUser(user), appointments, payments, activity, matters, documents });
 });
 
 usersRouter.post('/', async (c) => {
@@ -103,6 +107,7 @@ usersRouter.post('/', async (c) => {
       email: z.string().trim().toLowerCase().email(),
       phone: z.string().trim().max(30).optional(),
       notes: z.string().max(2000).optional(),
+      title: z.string().trim().max(100).optional(),
       role: roleSchema.default('client'),
     })
     .parse(await c.req.json());
@@ -112,12 +117,13 @@ usersRouter.post('/', async (c) => {
 
   const password = tempPassword();
   const { id } = await run(
-    `INSERT INTO users (email, password_hash, name, phone, notes, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    `INSERT INTO users (email, password_hash, name, phone, notes, title, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
     body.email,
     await hashPassword(password),
     body.name,
     body.phone || null,
     body.notes || null,
+    body.title || null,
     body.role,
   );
   await audit(c, 'create_account', 'user', id, { role: body.role });
@@ -133,6 +139,7 @@ usersRouter.patch('/:id', async (c) => {
       email: z.string().trim().toLowerCase().email().optional(),
       phone: z.string().trim().max(30).nullable().optional(),
       notes: z.string().max(2000).nullable().optional(),
+      title: z.string().trim().max(100).nullable().optional(),
       role: roleSchema.optional(),
       isActive: z.boolean().optional(),
     })
@@ -155,11 +162,12 @@ usersRouter.patch('/:id', async (c) => {
   }
 
   await run(
-    'UPDATE users SET name = ?, email = ?, phone = ?, notes = ?, role = ?, is_active = ? WHERE id = ?',
+    'UPDATE users SET name = ?, email = ?, phone = ?, notes = ?, title = ?, role = ?, is_active = ? WHERE id = ?',
     body.name ?? user.name,
     body.email ?? user.email,
     body.phone !== undefined ? body.phone || null : user.phone,
     body.notes !== undefined ? body.notes || null : user.notes,
+    body.title !== undefined ? body.title || null : user.title,
     body.role ?? user.role,
     body.isActive === undefined ? user.is_active : Number(body.isActive),
     user.id,

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { all, one } from '../db.js';
 import type { AppEnv } from '../lib/auth.js';
 import { APPOINTMENT_SELECT } from './appointments.js';
+import { DOCUMENT_SELECT } from './documents.js';
+import { STAGES } from './matters.js';
 import { PAYMENT_SELECT } from './payments.js';
 
 export const dashboardRouter = new Hono<AppEnv>();
@@ -26,7 +28,7 @@ dashboardRouter.get('/summary', async (c) => {
   const ago14d = new Date(now.getTime() - 13 * DAY);
   ago14d.setUTCHours(0, 0, 0, 0);
 
-  const [stats, revenueRows, today, recentPayments, unpaid] = await Promise.all([
+  const [stats, revenueRows, today, recentPayments, unpaid, stages, toReview] = await Promise.all([
     one<Record<string, number>>(
       `SELECT
          (SELECT COUNT(*) FROM appointments WHERE start_at >= ? AND start_at < ? AND status != 'cancelled') AS todayCount,
@@ -37,7 +39,11 @@ dashboardRouter.get('/summary', async (c) => {
          (SELECT COUNT(*) FROM users WHERE role = 'client' AND created_at >= ?) AS newClients30d,
          (SELECT COUNT(*) FROM users WHERE locked_until > ?) AS lockedAccounts,
          (SELECT COUNT(*) FROM appointments WHERE status IN ('cancelled','no_show') AND start_at >= ? AND start_at < ?) AS cancelled30d,
-         (SELECT COUNT(*) FROM appointments WHERE start_at >= ? AND start_at < ?) AS total30d`,
+         (SELECT COUNT(*) FROM appointments WHERE start_at >= ? AND start_at < ?) AS total30d,
+         (SELECT COUNT(*) FROM matters WHERE stage != 'closed') AS openMatters,
+         (SELECT COUNT(*) FROM documents WHERE status = 'received') AS documentsToReview,
+         (SELECT COUNT(*) FROM documents WHERE status = 'requested') AS documentsRequested,
+         (SELECT COUNT(*) FROM messages WHERE read_at IS NULL AND sender_id = client_id) AS unreadMessages`,
       dayStart, dayEnd, nowIso, in7d, ago30d, ago30d, nowIso, ago30d, nowIso, ago30d, nowIso,
     ),
     all<{ day: string; cents: number }>(
@@ -51,6 +57,8 @@ dashboardRouter.get('/summary', async (c) => {
       `SELECT * FROM (${APPOINTMENT_SELECT} WHERE a.status = 'completed') WHERE paidCents < priceCents
        ORDER BY startAt DESC LIMIT 6`,
     ),
+    all<{ stage: string; count: number }>(`SELECT stage, COUNT(*) AS count FROM matters GROUP BY stage`),
+    all(`${DOCUMENT_SELECT} WHERE d.status = 'received' ORDER BY d.uploaded_at DESC LIMIT 6`),
   ]);
 
   const byDay = new Map(revenueRows.map((r) => [r.day, r.cents]));
@@ -59,5 +67,8 @@ dashboardRouter.get('/summary', async (c) => {
     return { day, cents: byDay.get(day) ?? 0 };
   });
 
-  return c.json({ stats, revenueByDay, today, recentPayments, unpaid });
+  const byStage = new Map(stages.map((r) => [r.stage, r.count]));
+  const matterStages = STAGES.map((stage) => ({ stage, count: byStage.get(stage) ?? 0 }));
+
+  return c.json({ stats, revenueByDay, today, recentPayments, unpaid, matterStages, toReview });
 });
