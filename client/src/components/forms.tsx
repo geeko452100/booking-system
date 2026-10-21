@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { api, qs, useApi } from '../api';
 import { isStaffRole, useAuth } from '../auth';
+import { cap, indefinite, useBusiness } from '../business';
 import { formatDateTime, formatMoney, labels, toLocalInput } from '../format';
-import type { Appointment, Attorney, Payment, PaymentMethod, PaymentStatus, Role, Service, User, UserListItem } from '../types';
+import type { Appointment, Payment, PaymentMethod, PaymentStatus, Role, Service, TeamMember, User, UserListItem } from '../types';
 import { ErrorBanner, Field, TempPasswordNotice } from './ui';
 
 function useSubmit<T>(fn: () => Promise<T>, onDone: (r: T) => void) {
@@ -50,9 +51,10 @@ export function AppointmentForm({
   onCancel: () => void;
 }) {
   const { user } = useAuth();
+  const { words } = useBusiness().config;
   const staff = isStaffRole(user);
   const { data: services } = useApi<Service[]>('/services');
-  const { data: providers } = useApi<Attorney[]>('/appointments/providers');
+  const { data: providers } = useApi<TeamMember[]>('/appointments/providers');
   const { data: clients } = useApi<UserListItem[]>(staff && !appointment ? '/users?role=client&status=active' : null);
 
   const [clientId, setClientId] = useState(appointment?.clientId ?? presetClientId ?? 0);
@@ -99,14 +101,14 @@ export function AppointmentForm({
           Client: <strong>{appointment.clientName}</strong>
         </p>
       )}
-      <Field label="Meeting type">
+      <Field label="Service">
         <select required value={serviceId || ''} onChange={(e) => setServiceId(Number(e.target.value))}>
           <option value="" disabled>
-            Select a meeting type…
+            Select a service…
           </option>
           {activeServices.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.name} · {s.durationMin} min · {formatMoney(s.priceCents)}
+              {s.name} · {s.durationMin} min · {s.priceCents ? formatMoney(s.priceCents) : 'Free'}
             </option>
           ))}
         </select>
@@ -115,7 +117,7 @@ export function AppointmentForm({
         <Field label="Date & time" hint={service ? `Ends ${service.durationMin} minutes later` : undefined}>
           <input type="datetime-local" required step={900} value={start} onChange={(e) => setStart(e.target.value)} />
         </Field>
-        <Field label="Attorney">
+        <Field label={cap(words.teamMember)}>
           <select value={staffId} onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : '')}>
             <option value="">First available</option>
             {providers?.map((p) => (
@@ -126,10 +128,10 @@ export function AppointmentForm({
           </select>
         </Field>
       </div>
-      <Field label="What would you like to discuss? (optional)">
-        <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
+      <Field label="Notes (optional)">
+        <textarea rows={3} placeholder={words.bookingNotes} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
       </Field>
-      <FormActions busy={busy} label={appointment ? 'Save changes' : 'Book meeting'} onCancel={onCancel} />
+      <FormActions busy={busy} label={appointment ? 'Save changes' : `Book ${indefinite(words.booking)}`} onCancel={onCancel} />
     </form>
   );
 }
@@ -145,6 +147,7 @@ export function PaymentForm({
   onSaved: (p: Payment) => void;
   onCancel: () => void;
 }) {
+  const { words } = useBusiness().config;
   const [clientId, setClientId] = useState(appointment?.clientId ?? presetClientId ?? 0);
   const [appointmentId, setAppointmentId] = useState<number | ''>(appointment?.id ?? '');
   const outstanding = appointment ? Math.max(0, appointment.priceCents - appointment.paidCents) : 0;
@@ -201,7 +204,7 @@ export function PaymentForm({
           {' '}Outstanding: <strong>{formatMoney(outstanding)}</strong>
         </p>
       ) : (
-        <Field label="For meeting (optional)">
+        <Field label={`For ${words.booking} (optional)`}>
           <select
             value={appointmentId}
             disabled={!clientId}
@@ -212,7 +215,7 @@ export function PaymentForm({
               if (a && !amount) setAmount((Math.max(0, a.priceCents - a.paidCents) / 100).toFixed(2));
             }}
           >
-            <option value="">General retainer / not linked</option>
+            <option value="">Not linked to a {words.booking}</option>
             {appts
               ?.filter((a) => a.status !== 'cancelled')
               .slice()
@@ -333,7 +336,7 @@ export function UserForm({
         </Field>
       </div>
       {isStaffAccount && (
-        <Field label="Job title" hint="Shown to clients, e.g. Senior Associate">
+        <Field label="Job title" hint="Shown to clients, for this business only">
           <input value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} />
         </Field>
       )}

@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { qs, useApi } from '../api';
 import { isStaffRole, useAuth } from '../auth';
+import { cap, indefinite, useBusiness } from '../business';
 import { AppointmentActions, PaymentState } from '../components/AppointmentActions';
 import { AppointmentForm } from '../components/forms';
 import { Card, Empty, ErrorBanner, Loading, Modal, PageHeader, StatusBadge } from '../components/ui';
@@ -19,6 +20,8 @@ type RangeKey = keyof typeof ranges;
 
 export function Appointments() {
   const { user } = useAuth();
+  const { config } = useBusiness();
+  const { words } = config;
   const staff = isStaffRole(user);
   const [params, setParams] = useSearchParams();
   const [booking, setBooking] = useState(false);
@@ -50,9 +53,9 @@ export function Appointments() {
   return (
     <>
       <PageHeader
-        title={staff ? 'Meetings' : 'My meetings'}
-        subtitle={data ? `${data.length} meeting${data.length === 1 ? '' : 's'}` : undefined}
-        actions={<button className="btn btn-primary" onClick={() => setBooking(true)}>{staff ? 'Schedule meeting' : 'Book a meeting'}</button>}
+        title={staff ? cap(words.bookings) : `My ${words.bookings}`}
+        subtitle={data ? `${data.length} ${data.length === 1 ? words.booking : words.bookings}` : undefined}
+        actions={<button className="btn btn-primary" onClick={() => setBooking(true)}>{staff ? `New ${words.booking}` : `Book ${indefinite(words.booking)}`}</button>}
       />
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Date range">
@@ -70,7 +73,7 @@ export function Appointments() {
           <option value="no_show">No-show</option>
         </select>
         {staff && (
-          <input type="search" className="search" placeholder="Search client or meeting type…" defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
+          <input type="search" className="search" placeholder={`Search ${words.client}, service or notes…`} defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
         )}
       </div>
       <ErrorBanner message={error} />
@@ -78,16 +81,16 @@ export function Appointments() {
         {loading && !data ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <Empty>No meetings in this view.</Empty>
+          <Empty>No {words.bookings} in this view.</Empty>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Time</th>
-                  {staff && <th>Client</th>}
-                  <th>Meeting</th>
-                  <th>Attorney</th>
+                  {staff && <th>{cap(words.client)}</th>}
+                  <th>Service</th>
+                  <th>{cap(words.teamMember)}</th>
                   <th>Status</th>
                   <th>Payment</th>
                   <th />
@@ -131,7 +134,7 @@ export function Appointments() {
       </Card>
 
       {booking && (
-        <Modal title={staff ? 'Schedule a meeting' : 'Book a meeting'} onClose={() => setBooking(false)}>
+        <Modal title={staff ? `New ${words.booking}` : `Book ${indefinite(words.booking)}`} onClose={() => setBooking(false)}>
           <AppointmentForm onCancel={() => setBooking(false)} onSaved={() => { setBooking(false); reload(); }} />
         </Modal>
       )}

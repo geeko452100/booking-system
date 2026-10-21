@@ -11,9 +11,9 @@ import { ClientHome } from './pages/ClientHome';
 import { Dashboard } from './pages/Dashboard';
 import { Documents } from './pages/Documents';
 import { Login, Register } from './pages/Login';
-import { Matters } from './pages/Matters';
 import { Messages } from './pages/Messages';
 import { Payments } from './pages/Payments';
+import { Projects } from './pages/Projects';
 import { Services } from './pages/Services';
 import type { Role } from './types';
 
@@ -34,7 +34,7 @@ export function App() {
       <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
       <Route element={<Guard><Layout /></Guard>}>
         <Route index element={isStaffRole(user) ? <Dashboard /> : <ClientHome />} />
-        <Route path="matters" element={<Matters />} />
+        <Route path="projects" element={<Projects />} />
         <Route path="documents" element={<Documents />} />
         <Route path="messages" element={<Messages />} />
         <Route path="appointments" element={<Appointments />} />

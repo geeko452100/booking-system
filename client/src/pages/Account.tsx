@@ -1,12 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { BUSINESSES, useBusiness } from '../business';
+import { BusinessPicker } from '../components/portal';
 import { Card, ErrorBanner, Field, PageHeader } from '../components/ui';
-import { formatDateTime, labels } from '../format';
+import { formatDateTime } from '../format';
 import type { User } from '../types';
 
 export function Account() {
   const { user, setUser } = useAuth();
+  const { config, siteType, demoMode } = useBusiness();
   const [name, setName] = useState(user!.name);
   const [phone, setPhone] = useState(user!.phone ?? '');
   const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -46,13 +49,23 @@ export function Account() {
 
   return (
     <>
-      <PageHeader title="My account" subtitle={`${user!.email} · ${labels[user!.role]} · last sign-in ${formatDateTime(user!.lastLoginAt)}`} />
+      <PageHeader title="My account" subtitle={`${user!.email} · ${user!.title ?? config.roles[user!.role]} · last sign-in ${formatDateTime(user!.lastLoginAt)}`} />
+      {user!.role === 'admin' && (
+        <Card title="Business type">
+          <p className="muted">
+            Choose what kind of business this portal is for. It changes the name, photos, wording, services and which
+            features {config.words.clients} see.
+            {demoMode && ` On the demo this only changes your own view; everyone else still sees ${BUSINESSES[siteType].label.toLowerCase()}.`}
+          </p>
+          <BusinessPicker />
+        </Card>
+      )}
       <div className="grid-2">
         <Card title="Profile">
           <form className="form" onSubmit={saveProfile}>
             {msg(profileMsg)}
             <Field label="Full name"><input required value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <Field label="Email" hint="Message the firm to change your email address."><input value={user!.email} disabled /></Field>
+            <Field label="Email" hint="Message us to change your email address."><input value={user!.email} disabled /></Field>
             <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
             <div className="form-actions"><button className="btn btn-primary">Save profile</button></div>
           </form>

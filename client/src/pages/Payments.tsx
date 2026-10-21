@@ -43,7 +43,7 @@ export function Payments() {
   const { data, error, loading, reload } = useApi<Payment[]>(`/payments${query}`);
   const appts = useApi<Appointment[]>(staff ? null : '/appointments');
 
-  // Completed meetings with a balance, plus upcoming ones the client can pay ahead for.
+  // Completed bookings with a balance, plus upcoming ones the client can pay ahead for.
   const due = useMemo(() => {
     const now = new Date().toISOString();
     return (appts.data ?? []).filter(
@@ -74,7 +74,7 @@ export function Payments() {
     <>
       <PageHeader
         title={staff ? 'Billing' : 'Billing & invoices'}
-        subtitle={staff ? 'Every payment recorded against client accounts.' : 'Invoices for your meetings and your payment history.'}
+        subtitle={staff ? 'Every payment recorded against client accounts.' : 'What you owe and everything you’ve paid.'}
         actions={
           staff && (
             <>

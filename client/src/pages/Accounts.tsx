@@ -2,15 +2,18 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { qs, useApi } from '../api';
 import { useAuth } from '../auth';
+import { cap, useBusiness } from '../business';
 import { UserForm } from '../components/forms';
 import { Avatar } from '../components/portal';
 import { AccountBadge, Card, Empty, ErrorBanner, Loading, Modal, PageHeader } from '../components/ui';
-import { formatDateTime, formatMoney, formatRelative, labels } from '../format';
+import { formatDateTime, formatMoney, formatRelative } from '../format';
 import type { UserListItem } from '../types';
 
 /** Lists client accounts, or (for admins) staff and admin accounts. */
 export function Accounts({ kind }: { kind: 'clients' | 'staff' }) {
   const { user } = useAuth();
+  const { config } = useBusiness();
+  const { words } = config;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
@@ -32,12 +35,12 @@ export function Accounts({ kind }: { kind: 'clients' | 'staff' }) {
   return (
     <>
       <PageHeader
-        title={isClients ? 'Clients' : 'Team'}
-        subtitle={isClients ? 'Client accounts, sign-in status and history.' : 'Partners and attorneys who can sign in to the firm side of the portal.'}
+        title={isClients ? cap(words.clients) : 'Team'}
+        subtitle={isClients ? `${cap(words.client)} accounts, sign-in status and history.` : 'People who can sign in to run the business side of the portal.'}
         actions={
           (isClients || user?.role === 'admin') && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
-              {isClients ? 'New client' : 'New team member'}
+              {isClients ? `New ${words.client}` : 'New team member'}
             </button>
           )
         }
@@ -80,8 +83,8 @@ export function Accounts({ kind }: { kind: 'clients' | 'staff' }) {
                   <th>Last sign-in</th>
                   {isClients ? (
                     <>
-                      <th>Next meeting</th>
-                      <th className="num">Meetings</th>
+                      <th>Next {words.booking}</th>
+                      <th className="num">{cap(words.bookings)}</th>
                       <th className="num">Total paid</th>
                     </>
                   ) : (
@@ -113,7 +116,7 @@ export function Accounts({ kind }: { kind: 'clients' | 'staff' }) {
                         <td className="num">{formatMoney(u.totalPaidCents)}</td>
                       </>
                     ) : (
-                      <td>{u.title ?? labels[u.role]}</td>
+                      <td>{u.title ?? config.roles[u.role]}</td>
                     )}
                   </tr>
                 ))}
@@ -124,7 +127,7 @@ export function Accounts({ kind }: { kind: 'clients' | 'staff' }) {
       </Card>
 
       {creating && (
-        <Modal title={isClients ? 'New client' : 'New team member'} onClose={() => setCreating(false)}>
+        <Modal title={isClients ? `New ${words.client}` : 'New team member'} onClose={() => setCreating(false)}>
           <UserForm
             defaultRole={isClients ? 'client' : 'staff'}
             onCancel={() => setCreating(false)}
