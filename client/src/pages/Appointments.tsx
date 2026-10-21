@@ -50,9 +50,9 @@ export function Appointments() {
   return (
     <>
       <PageHeader
-        title={staff ? 'Appointments' : 'My appointments'}
-        subtitle={data ? `${data.length} appointment${data.length === 1 ? '' : 's'}` : undefined}
-        actions={<button className="btn btn-primary" onClick={() => setBooking(true)}>{staff ? 'New appointment' : 'Book an appointment'}</button>}
+        title={staff ? 'Meetings' : 'My meetings'}
+        subtitle={data ? `${data.length} meeting${data.length === 1 ? '' : 's'}` : undefined}
+        actions={<button className="btn btn-primary" onClick={() => setBooking(true)}>{staff ? 'Schedule meeting' : 'Book a meeting'}</button>}
       />
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Date range">
@@ -70,7 +70,7 @@ export function Appointments() {
           <option value="no_show">No-show</option>
         </select>
         {staff && (
-          <input type="search" className="search" placeholder="Search client or service…" defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
+          <input type="search" className="search" placeholder="Search client or meeting type…" defaultValue={q} onChange={(e) => setParam('q', e.target.value)} />
         )}
       </div>
       <ErrorBanner message={error} />
@@ -78,7 +78,7 @@ export function Appointments() {
         {loading && !data ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <Empty>No appointments in this view.</Empty>
+          <Empty>No meetings in this view.</Empty>
         ) : (
           <div className="table-wrap">
             <table>
@@ -86,8 +86,8 @@ export function Appointments() {
                 <tr>
                   <th>Time</th>
                   {staff && <th>Client</th>}
-                  <th>Service</th>
-                  <th>With</th>
+                  <th>Meeting</th>
+                  <th>Attorney</th>
                   <th>Status</th>
                   <th>Payment</th>
                   <th />
@@ -116,7 +116,7 @@ export function Appointments() {
                           {a.serviceName}
                           {a.notes && <div className="muted small" title={a.notes}>📝 {a.notes.slice(0, 40)}{a.notes.length > 40 && '…'}</div>}
                         </td>
-                        <td>{a.staffName ?? <span className="muted">Any</span>}</td>
+                        <td>{a.staffName ?? <span className="muted">First available</span>}</td>
                         <td><StatusBadge status={a.status} /></td>
                         <td><PaymentState appt={a} /></td>
                         <td className="actions-cell"><AppointmentActions appt={a} onChanged={reload} /></td>
@@ -131,7 +131,7 @@ export function Appointments() {
       </Card>
 
       {booking && (
-        <Modal title={staff ? 'New appointment' : 'Book an appointment'} onClose={() => setBooking(false)}>
+        <Modal title={staff ? 'Schedule a meeting' : 'Book a meeting'} onClose={() => setBooking(false)}>
           <AppointmentForm onCancel={() => setBooking(false)} onSaved={() => { setBooking(false); reload(); }} />
         </Modal>
       )}

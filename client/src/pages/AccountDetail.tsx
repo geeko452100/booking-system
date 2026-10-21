@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
+import { StageTracker } from '../components/portal';
 import { api, useApi } from '../api';
 import { useAuth } from '../auth';
 import { AppointmentActions, PaymentState } from '../components/AppointmentActions';
@@ -8,27 +9,31 @@ import {
   AccountBadge, Badge, Card, Empty, ErrorBanner, Loading, Modal, PageHeader, StatCard, StatusBadge, TempPasswordNotice,
 } from '../components/ui';
 import { actionLabel, formatDate, formatDateTime, formatMoney, formatRelative, labels } from '../format';
-import type { ActivityEntry, Appointment, Payment, User } from '../types';
+import type { ActivityEntry, Appointment, LegalDocument, Matter, Payment, User } from '../types';
+import { DocumentForm } from './Documents';
+import { MatterForm } from './Matters';
 
 interface Detail {
   user: User;
   appointments: Appointment[];
   payments: Payment[];
   activity: ActivityEntry[];
+  matters: Matter[];
+  documents: LegalDocument[];
 }
 
 export function AccountDetail() {
   const { id } = useParams();
   const { user: me } = useAuth();
   const { data, error, loading, reload } = useApi<Detail>(`/users/${id}`);
-  const [modal, setModal] = useState<'edit' | 'book' | 'pay' | null>(null);
+  const [modal, setModal] = useState<'edit' | 'book' | 'pay' | 'matter' | 'request' | null>(null);
   const [tempPw, setTempPw] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorBanner message={error ?? 'Not found'} />;
 
-  const { user, appointments, payments, activity } = data;
+  const { user, appointments, payments, activity, matters, documents } = data;
   const isClient = user.role === 'client';
   const isAdmin = me?.role === 'admin';
   const isSelf = me?.id === user.id;
@@ -59,7 +64,7 @@ export function AccountDetail() {
   return (
     <>
       <p className="breadcrumb">
-        <Link to={isClient ? '/clients' : '/staff'}>← {isClient ? 'Clients' : 'Staff'}</Link>
+        <Link to={isClient ? '/clients' : '/staff'}>← {isClient ? 'Clients' : 'Team'}</Link>
       </p>
       <PageHeader
         title={user.name}
@@ -67,15 +72,18 @@ export function AccountDetail() {
           <span className="inline-badges">
             <AccountBadge user={user} />
             {!isClient && <Badge>{labels[user.role]}</Badge>}
-            <span>Member since {formatDate(user.createdAt)}</span>
+            <span>{isClient ? 'Client since' : 'Joined'} {formatDate(user.createdAt)}</span>
           </span>
         }
         actions={
           isClient && (
             <>
               <button className="btn" onClick={() => setModal('pay')}>Record payment</button>
+              <button className="btn" onClick={() => setModal('matter')}>Open matter</button>
+              <button className="btn" onClick={() => setModal('request')}>Request document</button>
+              <Link className="btn" to={`/messages?client=${user.id}`}>Message</Link>
               <button className="btn btn-primary" onClick={() => setModal('book')} disabled={!user.isActive}>
-                Book appointment
+                Schedule meeting
               </button>
             </>
           )
@@ -86,8 +94,8 @@ export function AccountDetail() {
 
       {isClient && (
         <div className="stats">
-          <StatCard label="Upcoming" value={upcoming.length} hint={upcoming[0] ? formatDateTime(upcoming[0].startAt) : 'Nothing booked'} />
-          <StatCard label="Total visits" value={appointments.filter((a) => a.status === 'completed').length} />
+          <StatCard label="Open matters" value={matters.filter((m) => m.stage !== 'closed').length} />
+          <StatCard label="Upcoming meetings" value={upcoming.length} hint={upcoming[0] ? formatDateTime(upcoming[0].startAt) : 'Nothing booked'} />
           <StatCard label="Total paid" value={formatMoney(totalPaid)} />
           <StatCard label="Balance due" value={formatMoney(owed)} tone={owed ? 'alert' : undefined} />
         </div>
@@ -99,6 +107,7 @@ export function AccountDetail() {
             <dl className="details">
               <dt>Email</dt><dd>{user.email}</dd>
               <dt>Phone</dt><dd>{user.phone ?? '—'}</dd>
+              {user.title && (<><dt>Title</dt><dd>{user.title}</dd></>)}
               <dt>Notes</dt><dd className="pre">{user.notes ?? <span className="muted">None</span>}</dd>
             </dl>
           </Card>
@@ -173,15 +182,49 @@ export function AccountDetail() {
 
         {isClient && (
           <div className="stack">
-            <Card title="Upcoming appointments">
+            <Card title="Matters">
+              {matters.length === 0 ? (
+                <Empty>No matters yet.</Empty>
+              ) : (
+                <ul className="list">
+                  {matters.map((m) => (
+                    <li key={m.id} className="matter-row">
+                      <div>
+                        <strong>{m.title}</strong>
+                        <div className="muted small">{m.practice}{m.staffName && ` · ${m.staffName}`}</div>
+                      </div>
+                      <StageTracker stage={m.stage} compact />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card title="Documents" actions={<Link to={`/documents?q=${encodeURIComponent(user.name)}`} className="link-small">All →</Link>}>
+              {documents.length === 0 ? (
+                <Empty>No documents yet.</Empty>
+              ) : (
+                <ul className="list">
+                  {documents.slice(0, 8).map((d) => (
+                    <li key={d.id}>
+                      <div>
+                        <strong>{d.name}</strong>
+                        <div className="muted small">{d.fileName ?? 'Not uploaded yet'} · {formatDate(d.uploadedAt ?? d.createdAt)}</div>
+                      </div>
+                      <StatusBadge status={d.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card title="Upcoming meetings">
               {upcoming.length === 0 ? (
                 <Empty>Nothing booked.</Empty>
               ) : (
                 <AppointmentTable rows={upcoming} onChanged={reload} />
               )}
             </Card>
-            <Card title="Appointment history">
-              {past.length === 0 ? <Empty>No past appointments.</Empty> : <AppointmentTable rows={past} onChanged={reload} />}
+            <Card title="Meeting history">
+              {past.length === 0 ? <Empty>No past meetings.</Empty> : <AppointmentTable rows={past} onChanged={reload} />}
             </Card>
             <Card title="Payments">
               {payments.length === 0 ? (
@@ -217,8 +260,18 @@ export function AccountDetail() {
         </Modal>
       )}
       {modal === 'book' && (
-        <Modal title={`Book for ${user.name}`} onClose={close}>
+        <Modal title={`Schedule a meeting with ${user.name}`} onClose={close}>
           <AppointmentForm clientId={user.id} onCancel={close} onSaved={saved} />
+        </Modal>
+      )}
+      {modal === 'matter' && (
+        <Modal title={`Open a matter for ${user.name}`} onClose={close}>
+          <MatterForm clientId={user.id} onCancel={close} onSaved={saved} />
+        </Modal>
+      )}
+      {modal === 'request' && (
+        <Modal title={`Request a document from ${user.name}`} onClose={close}>
+          <DocumentForm mode="request" clientId={user.id} onCancel={close} onSaved={saved} />
         </Modal>
       )}
       {modal === 'pay' && (
@@ -235,7 +288,7 @@ function AppointmentTable({ rows, onChanged }: { rows: Appointment[]; onChanged:
     <div className="table-wrap">
       <table>
         <thead>
-          <tr><th>When</th><th>Service</th><th>Status</th><th>Payment</th><th /></tr>
+          <tr><th>When</th><th>Meeting</th><th>Status</th><th>Payment</th><th /></tr>
         </thead>
         <tbody>
           {rows.map((a) => (

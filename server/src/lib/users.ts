@@ -13,6 +13,8 @@ export interface UserRow {
   must_change_password: number;
   last_login_at: string | null;
   notes: string | null;
+  photo: string | null;
+  title: string | null;
   created_at: string;
 }
 
@@ -30,6 +32,8 @@ export function publicUser(u: UserRow) {
     mustChangePassword: !!u.must_change_password,
     lastLoginAt: u.last_login_at,
     notes: u.notes,
+    photo: u.photo,
+    title: u.title,
     createdAt: u.created_at,
     isDemoAccount: isProtectedDemoAccount(u.email),
   };

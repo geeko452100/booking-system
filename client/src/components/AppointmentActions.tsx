@@ -5,7 +5,7 @@ import type { Appointment, AppointmentStatus } from '../types';
 import { AppointmentForm, PaymentForm } from './forms';
 import { Modal } from './ui';
 
-/** Row-level actions for an appointment, adapted to the viewer's role and the appointment's state. */
+/** Row-level actions for a meeting, adapted to the viewer's role and the appointment's state. */
 export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onChanged: () => void }) {
   const { user } = useAuth();
   const [modal, setModal] = useState<'edit' | 'pay' | null>(null);
@@ -29,7 +29,7 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
 
   if (!staff) {
     return upcoming ? (
-      <button className="btn btn-small" disabled={busy} onClick={() => setStatus('cancelled', 'Cancel this appointment?')}>
+      <button className="btn btn-small" disabled={busy} onClick={() => setStatus('cancelled', 'Cancel this meeting?')}>
         Cancel
       </button>
     ) : null;
@@ -49,8 +49,8 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
             <div className="menu-list">
               <button onClick={() => setModal('edit')}>Reschedule / edit</button>
               <button onClick={() => setStatus('no_show')}>Mark no-show</button>
-              <button className="danger" onClick={() => setStatus('cancelled', 'Cancel this appointment?')}>
-                Cancel appointment
+              <button className="danger" onClick={() => setStatus('cancelled', 'Cancel this meeting?')}>
+                Cancel meeting
               </button>
             </div>
           </details>
@@ -68,7 +68,7 @@ export function AppointmentActions({ appt, onChanged }: { appt: Appointment; onC
       )}
 
       {modal === 'edit' && (
-        <Modal title="Edit appointment" onClose={() => setModal(null)}>
+        <Modal title="Edit meeting" onClose={() => setModal(null)}>
           <AppointmentForm
             appointment={appt}
             onCancel={() => setModal(null)}

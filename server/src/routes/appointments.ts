@@ -9,7 +9,7 @@ export const appointmentsRouter = new Hono<AppEnv>();
 
 export const APPOINTMENT_SELECT = `
   SELECT a.id, a.client_id AS clientId, c.name AS clientName, c.email AS clientEmail,
-         a.staff_id AS staffId, st.name AS staffName,
+         a.staff_id AS staffId, st.name AS staffName, st.photo AS staffPhoto,
          a.service_id AS serviceId, sv.name AS serviceName, sv.price_cents AS priceCents,
          a.start_at AS startAt, a.end_at AS endAt, a.status, a.notes, a.created_at AS createdAt,
          (SELECT COALESCE(SUM(p.amount_cents), 0) FROM payments p
@@ -32,7 +32,7 @@ interface AppointmentRow {
 
 const statusSchema = z.enum(['scheduled', 'completed', 'cancelled', 'no_show']);
 const isoDate = z.string().datetime({ offset: true }).transform((s) => new Date(s).toISOString());
-const OVERLAP = 'That time overlaps another appointment for this client or provider';
+const OVERLAP = 'That time overlaps another meeting for this client or attorney';
 
 /**
  * SQL condition that is true when another scheduled appointment overlaps the slot for the same
@@ -47,9 +47,9 @@ const conflictParams = (p: { excludeId: number; start: string; end: string; clie
 
 const getAppointment = (id: number) => one(`${APPOINTMENT_SELECT} WHERE a.id = ?`, id);
 
-/** Providers a client can pick when booking. */
+/** Attorneys a client can pick when booking. */
 appointmentsRouter.get('/providers', async (c) =>
-  c.json(await all(`SELECT id, name FROM users WHERE role IN ('staff','admin') AND is_active = 1 ORDER BY name`)),
+  c.json(await all(`SELECT id, name, title, photo FROM users WHERE role IN ('staff','admin') AND is_active = 1 ORDER BY name`)),
 );
 
 appointmentsRouter.get('/', async (c) => {
@@ -104,7 +104,7 @@ async function loadService(id: number) {
 async function assertProvider(staffId: number | null | undefined) {
   if (staffId == null) return;
   const ok = await one(`SELECT 1 FROM users WHERE id = ? AND role IN ('staff','admin') AND is_active = 1`, staffId);
-  if (!ok) throw new HttpError(400, 'Unknown provider');
+  if (!ok) throw new HttpError(400, 'Unknown attorney');
 }
 
 const endOf = (startIso: string, minutes: number) => new Date(new Date(startIso).getTime() + minutes * 60_000).toISOString();
@@ -128,7 +128,7 @@ appointmentsRouter.post('/', async (c) => {
   }
 
   const service = await loadService(b.serviceId);
-  if (!service.is_active && !staff) throw new HttpError(400, 'This service is not currently offered');
+  if (!service.is_active && !staff) throw new HttpError(400, 'This consultation type is not currently offered');
   await assertProvider(b.staffId);
   if (!staff && b.startAt <= new Date().toISOString()) throw new HttpError(400, 'Please choose a time in the future');
 
@@ -149,7 +149,7 @@ appointmentsRouter.post('/', async (c) => {
 appointmentsRouter.patch('/:id', async (c) => {
   const id = parseId(c.req.param('id'));
   const appt = await one<AppointmentRow>('SELECT * FROM appointments WHERE id = ?', id);
-  if (!appt) throw new HttpError(404, 'Appointment not found');
+  if (!appt) throw new HttpError(404, 'Meeting not found');
 
   const b = z
     .object({
@@ -163,12 +163,12 @@ appointmentsRouter.patch('/:id', async (c) => {
 
   if (!isStaff(c)) {
     // Clients may only cancel their own upcoming appointments.
-    if (appt.client_id !== c.get('user').id) throw new HttpError(404, 'Appointment not found');
+    if (appt.client_id !== c.get('user').id) throw new HttpError(404, 'Meeting not found');
     if (!(b.status === 'cancelled' && Object.keys(b).length === 1)) {
-      throw new HttpError(403, 'Please contact us to change an appointment');
+      throw new HttpError(403, 'Please message your attorney to change a meeting');
     }
     if (appt.status !== 'scheduled' || appt.start_at <= new Date().toISOString()) {
-      throw new HttpError(400, 'Only upcoming appointments can be cancelled');
+      throw new HttpError(400, 'Only upcoming meetings can be cancelled');
     }
   }
 

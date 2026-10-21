@@ -52,7 +52,7 @@ export function Account() {
           <form className="form" onSubmit={saveProfile}>
             {msg(profileMsg)}
             <Field label="Full name"><input required value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <Field label="Email" hint="Contact staff to change your email address."><input value={user!.email} disabled /></Field>
+            <Field label="Email" hint="Message the firm to change your email address."><input value={user!.email} disabled /></Field>
             <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
             <div className="form-actions"><button className="btn btn-primary">Save profile</button></div>
           </form>

@@ -5,7 +5,7 @@ import { useAuth } from '../auth';
 import { AppointmentActions, PaymentState } from '../components/AppointmentActions';
 import { AppointmentForm, PaymentForm } from '../components/forms';
 import { BarChart, Card, Empty, ErrorBanner, Loading, Modal, PageHeader, StatCard, StatusBadge } from '../components/ui';
-import { formatDateTime, formatMoney, formatTime, labels, startOfDay } from '../format';
+import { formatDateTime, formatMoney, formatRelative, formatTime, labels, startOfDay } from '../format';
 import type { DashboardSummary } from '../types';
 
 export function Dashboard() {
@@ -29,7 +29,7 @@ export function Dashboard() {
         actions={
           <>
             <button className="btn" onClick={() => setModal('pay')}>Record payment</button>
-            <button className="btn btn-primary" onClick={() => setModal('book')}>New appointment</button>
+            <button className="btn btn-primary" onClick={() => setModal('book')}>Schedule meeting</button>
           </>
         }
       />
@@ -38,14 +38,20 @@ export function Dashboard() {
       {data && (
         <>
           <div className="stats">
-            <StatCard label="Today's appointments" value={data.stats.todayCount} hint={`${data.stats.upcoming7d} booked in the next 7 days`} />
-            <StatCard label="Revenue · last 30 days" value={formatMoney(data.stats.revenue30dCents)} hint={`${formatMoney(data.stats.pendingCents)} pending`} />
-            <StatCard label="Active clients" value={data.stats.activeClients} hint={`+${data.stats.newClients30d} new in 30 days`} />
+            <StatCard label="Today's meetings" value={data.stats.todayCount} hint={`${data.stats.upcoming7d} booked in the next 7 days`} />
+            <StatCard label="Open matters" value={data.stats.openMatters} hint={`${data.stats.activeClients} active clients · +${data.stats.newClients30d} in 30 days`} />
             <StatCard
-              label="Cancellation / no-show rate"
-              value={data.stats.total30d ? `${Math.round((data.stats.cancelled30d / data.stats.total30d) * 100)}%` : '—'}
-              hint="Last 30 days"
+              label="Unread client messages"
+              value={data.stats.unreadMessages}
+              tone={data.stats.unreadMessages ? 'alert' : undefined}
+              hint={<Link to="/messages">Open inbox →</Link>}
             />
+            <StatCard
+              label="Uploads to review"
+              value={data.stats.documentsToReview}
+              hint={<Link to="/documents?status=received">{data.stats.documentsRequested} requests outstanding →</Link>}
+            />
+            <StatCard label="Fees collected · 30 days" value={formatMoney(data.stats.revenue30dCents)} hint={`${formatMoney(data.stats.pendingCents)} pending`} />
             {data.stats.lockedAccounts > 0 && (
               <StatCard
                 tone="alert"
@@ -57,9 +63,20 @@ export function Dashboard() {
           </div>
 
           <div className="grid-2">
-            <Card title="Today's schedule" actions={<Link to="/appointments" className="link-small">All appointments →</Link>}>
+            <div className="stack">
+            <Card title="Case pipeline" actions={<Link to="/matters" className="link-small">All matters →</Link>}>
+              <div className="pipeline">
+                {data.matterStages.map((s) => (
+                  <Link key={s.stage} to={`/matters?stage=${s.stage}`} className={`pipeline-step stage-${s.stage}`}>
+                    <span className="pipeline-count">{s.count}</span>
+                    <span className="small">{labels[s.stage]}</span>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+            <Card title="Today's schedule" actions={<Link to="/appointments" className="link-small">All meetings →</Link>}>
               {data.today.length === 0 ? (
-                <Empty>No appointments today.</Empty>
+                <Empty>No meetings today.</Empty>
               ) : (
                 <ul className="schedule">
                   {data.today.map((a) => (
@@ -84,9 +101,28 @@ export function Dashboard() {
                 </ul>
               )}
             </Card>
+            </div>
 
             <div className="stack">
-              <Card title="Revenue · last 14 days">
+              <Card title="Uploads awaiting review" actions={<Link to="/documents?status=received" className="link-small">All →</Link>}>
+                {data.toReview.length === 0 ? (
+                  <Empty>Nothing waiting for review.</Empty>
+                ) : (
+                  <ul className="list">
+                    {data.toReview.map((d) => (
+                      <li key={d.id}>
+                        <div>
+                          <strong>{d.name}</strong>
+                          <div className="muted small">
+                            <Link to={`/clients/${d.clientId}`}>{d.clientName}</Link> · {d.fileName} · {formatRelative(d.uploadedAt)}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+              <Card title="Fees collected · last 14 days">
                 <BarChart
                   format={formatMoney}
                   data={data.revenueByDay.map((d) => ({
@@ -95,9 +131,9 @@ export function Dashboard() {
                   }))}
                 />
               </Card>
-              <Card title="Awaiting payment">
+              <Card title="Unpaid invoices">
                 {data.unpaid.length === 0 ? (
-                  <Empty>All completed appointments are paid. 🎉</Empty>
+                  <Empty>Every completed meeting has been paid for. 🎉</Empty>
                 ) : (
                   <ul className="list">
                     {data.unpaid.map((a) => (
@@ -118,7 +154,7 @@ export function Dashboard() {
             </div>
           </div>
 
-          <Card title="Recent payments" actions={<Link to="/payments" className="link-small">All payments →</Link>}>
+          <Card title="Recent payments" actions={<Link to="/payments" className="link-small">All billing →</Link>}>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -143,7 +179,7 @@ export function Dashboard() {
       )}
 
       {modal === 'book' && (
-        <Modal title="New appointment" onClose={() => setModal(null)}>
+        <Modal title="Schedule a meeting" onClose={() => setModal(null)}>
           <AppointmentForm onCancel={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
         </Modal>
       )}

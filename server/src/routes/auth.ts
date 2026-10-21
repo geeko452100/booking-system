@@ -30,11 +30,11 @@ authRouter.post('/login', authRateLimit, async (c) => {
   }
   if (user.locked_until && user.locked_until > now.toISOString()) {
     await audit(c, 'login_blocked_locked', 'user', user.id, undefined, user.id);
-    throw new HttpError(423, 'This account is temporarily locked after too many failed attempts. Try again later or contact staff.');
+    throw new HttpError(423, 'This account is temporarily locked after too many failed attempts. Try again later or call the firm.');
   }
   if (!user.is_active) {
     await audit(c, 'login_blocked_inactive', 'user', user.id, undefined, user.id);
-    throw new HttpError(403, 'This account has been deactivated. Please contact staff.');
+    throw new HttpError(403, 'This account has been deactivated. Please call the firm.');
   }
 
   if (!(await verifyPassword(pw, user.password_hash))) {

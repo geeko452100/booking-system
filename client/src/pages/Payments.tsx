@@ -43,7 +43,7 @@ export function Payments() {
   const { data, error, loading, reload } = useApi<Payment[]>(`/payments${query}`);
   const appts = useApi<Appointment[]>(staff ? null : '/appointments');
 
-  // Completed visits with a balance, plus upcoming ones the client can pay ahead for.
+  // Completed meetings with a balance, plus upcoming ones the client can pay ahead for.
   const due = useMemo(() => {
     const now = new Date().toISOString();
     return (appts.data ?? []).filter(
@@ -73,8 +73,8 @@ export function Payments() {
   return (
     <>
       <PageHeader
-        title={staff ? 'Payments' : 'My payments'}
-        subtitle={staff ? 'Every payment recorded against client accounts.' : 'Your payment history.'}
+        title={staff ? 'Billing' : 'Billing & invoices'}
+        subtitle={staff ? 'Every payment recorded against client accounts.' : 'Invoices for your meetings and your payment history.'}
         actions={
           staff && (
             <>
@@ -88,7 +88,7 @@ export function Payments() {
       {paidMsg && <div className="alert alert-success">{paidMsg}</div>}
 
       {!staff && (
-        <Card title="Pay online">
+        <Card title="Invoices to pay">
           {appts.loading && !appts.data ? (
             <Loading />
           ) : due.length === 0 ? (
@@ -100,7 +100,7 @@ export function Payments() {
                   <div>
                     <strong>{a.serviceName}</strong>
                     <div className="muted small">
-                      {formatDateTime(a.startAt)} · {a.status === 'completed' ? 'Balance due' : 'Upcoming — pay ahead'}
+                      {a.staffName ? `${a.staffName} · ` : ''}{formatDateTime(a.startAt)} · {a.status === 'completed' ? 'Balance due' : 'Upcoming — pay ahead'}
                     </div>
                   </div>
                   <div className="list-side">
